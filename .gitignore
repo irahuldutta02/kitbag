@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# SwiftPM / build output (scripts/build.sh writes to build/ and release/)
+.build/
+.swiftpm/
+/build/
+DerivedData/
+*.app
+*.dSYM/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# Editors / tools (local settings, not project files)
+.vscode/
+.idea/
+.claude/
+*.swp
+
+# Signing material and secrets: never commit
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+
+# Logs and scratch
+*.log
+*.tmp
