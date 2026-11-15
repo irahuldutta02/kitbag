@@ -6,6 +6,7 @@ import SwiftUI
 struct DevToolsView: View {
   @ObservedObject var model: DevToolsModel
   @ObservedObject var services: ServicesModel
+  @ObservedObject var versions: VersionsModel
 
   var body: some View {
     VStack(spacing: 12) {
@@ -14,7 +15,9 @@ struct DevToolsView: View {
         toolTile("Measure", symbol: "ruler", tint: .orange, action: model.measure)
       }
       if services.dockerReady { ServicesCard(model: services, copy: model.copy) }
+      VersionsCard(model: versions)
     }
+    .onAppear { Task { await versions.refresh() } }
   }
 
   private func toolTile(_ title: LocalizedStringKey, symbol: String, tint: Color, action: @escaping () -> Void)
@@ -147,59 +150,296 @@ struct ServicesCard: View {
   }
 }
 
-struct DevToolsSettingsView: View {
-  @ObservedObject var model: ServicesModel
+/// A self-contained card in Settings: icon, title, subtitle and actions on top, details below.
+struct SettingsBlock<Icon: View, Trailing: View, Content: View>: View {
+  let title: String
+  let subtitle: String
+  @ViewBuilder var icon: Icon
+  @ViewBuilder var trailing: Trailing
+  @ViewBuilder var content: Content
 
   var body: some View {
-    row("Docker", "Container engine", symbol: "shippingbox.fill", tint: .blue, id: "docker",
-      installed: model.dockerInstalled, install: { model.installDocker() },
-      uninstall: { model.uninstallDocker() })
-    .onAppear { Task { await model.refresh() } }
-    // Docker's icon is drawn by an Electron tray that has no saved identity, so no setting from
-    // outside can hide it; macOS's own per-app switch in System Settings is the way.
-    HStack(spacing: 8) {
-      Text("Docker's own menu bar icon")
-      Spacer()
-      Button("Manage in System Settings") { AppMenuIcon.openSystemSettings() }
-        .controlSize(.small)
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        icon
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).font(.headline)
+          Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        Spacer(minLength: 8)
+        trailing
+      }
+      .padding(12)
+      content
     }
-    ForEach(ServicesModel.services) { s in
-      row(s.title, s.subtitle, symbol: s.symbol, tint: s.tint, id: s.id,
-        installed: model.isInstalled(s), install: { model.install(s) },
-        uninstall: { model.uninstall(s) })
+    .frame(maxWidth: .infinity)
+    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+  }
+}
+
+/// A padded sub-section inside a block, set off by a divider.
+struct BlockSection<Content: View>: View {
+  var title: LocalizedStringKey?
+  @ViewBuilder var content: Content
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Divider()
+      if let title {
+        Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).tracking(0.5)
+      }
+      content
     }
-    if let n = model.notice { Text(n).font(.caption).foregroundStyle(.red) }
+    .padding(.horizontal, 12).padding(.bottom, 12)
+  }
+}
+
+/// Settings for the Dev Tools tab: one block each for Node.js, Python, Docker, MongoDB, PostgreSQL.
+struct DevToolsSettingsView: View {
+  @ObservedObject var model: ServicesModel
+  @ObservedObject var versions: VersionsModel
+
+  var body: some View {
+    VStack(spacing: 14) {
+      ForEach(VersionsModel.Kind.allCases) { RuntimeBlock(kind: $0, model: versions) }
+      dockerBlock
+      ForEach(ServicesModel.services) { serviceBlock($0) }
+      if let n = model.notice { Text(n).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading) }
+    }
+    .padding(.vertical, 4)
+    .listRowBackground(Color.clear)
+    .listRowInsets(EdgeInsets())
+    .onAppear {
+      Task { await versions.refresh() }
+      Task { await model.refresh() }
+    }
   }
 
-  private func row(
-    _ title: String, _ subtitle: String, symbol: String, tint: Color, id: String, installed: Bool,
+  // MARK: Docker and databases
+
+  private var dockerBlock: some View {
+    SettingsBlock(
+      title: "Docker", subtitle: String(localized: "Container engine"),
+      icon: { ServiceIcon(id: "docker", symbol: "shippingbox.fill", tint: .blue, size: 36) },
+      trailing: { actions(id: "docker", installed: model.dockerInstalled, installLabel: "Install",
+        install: { model.installDocker() }, uninstall: { model.uninstallDocker() }) },
+      content: {
+        // Docker's icon is drawn by an Electron tray with no saved identity, so no setting from
+        // outside can hide it; macOS's own per-app switch in System Settings is the way.
+        BlockSection {
+          HStack(spacing: 8) {
+            Text("Docker's own menu bar icon").font(.callout)
+            Spacer()
+            Button("Manage in System Settings") { AppMenuIcon.openSystemSettings() }.controlSize(.small)
+          }
+        }
+      })
+  }
+
+  private func serviceBlock(_ s: ServicesModel.Service) -> some View {
+    SettingsBlock(
+      title: s.title, subtitle: s.subtitle,
+      icon: { ServiceIcon(id: s.id, symbol: s.symbol, tint: s.tint, size: 36) },
+      trailing: { actions(id: s.id, installed: model.isInstalled(s),
+        installLabel: model.daemonReady ? "Install" : "Set up",
+        install: { model.install(s) }, uninstall: { model.uninstall(s) }) },
+      content: { EmptyView() })
+  }
+
+  @ViewBuilder private func actions(
+    id: String, installed: Bool, installLabel: LocalizedStringKey,
     install: @escaping () -> Void, uninstall: @escaping () -> Void
   ) -> some View {
-    HStack(spacing: 12) {
-      ServiceIcon(id: id, symbol: symbol, tint: tint, size: 28)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(title)
-        Text(subtitle).font(.caption).foregroundStyle(.secondary)
-      }
-      Spacer()
-      switch model.phase(id) {
-      case .installing: status("Installing…")
-      case .uninstalling: status("Uninstalling…")
-      default:
-        if installed {
-          Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            .font(.callout)
-          Button("Uninstall", role: .destructive, action: uninstall).controlSize(.small).disabled(model.isBusy)
-        } else {
-          Button(id == "docker" || model.daemonReady ? "Install" : "Set up", action: install)
-            .controlSize(.small).disabled(model.isBusy)
-        }
+    switch model.phase(id) {
+    case .installing: working("Installing…")
+    case .uninstalling: working("Uninstalling…")
+    default:
+      if installed {
+        Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.callout)
+        Button("Uninstall", role: .destructive, action: uninstall).controlSize(.small).disabled(model.isBusy)
+      } else {
+        Button(installLabel, action: install).controlSize(.small).disabled(model.isBusy)
       }
     }
   }
 
-  @ViewBuilder private func status(_ text: LocalizedStringKey) -> some View {
+  @ViewBuilder private func working(_ text: LocalizedStringKey) -> some View {
     Text(text).font(.caption).foregroundStyle(.secondary)
     ProgressView().controlSize(.small)
+  }
+}
+
+/// One runtime (Node.js or Python): the manager's state, a field for any version, and the
+/// installed versions with their default switch.
+struct RuntimeBlock: View {
+  let kind: VersionsModel.Kind
+  @ObservedObject var model: VersionsModel
+
+  private var s: VersionsModel.State { model.state(kind) }
+  private var working: Bool { model.busy?.hasPrefix(kind.rawValue) == true }
+
+  var body: some View {
+    SettingsBlock(
+      title: kind.title,
+      subtitle: s.installed
+        ? "\(kind.manager) · " + String(localized: "Default: \(s.defaultVersion ?? String(localized: "not set"))")
+        : String(localized: "\(kind.manager) isn't installed"),
+      icon: {
+        ServiceIcon(id: kind.rawValue, symbol: kind.symbol, tint: kind.tint, size: 36)
+      },
+      trailing: {
+        if working { ProgressView().controlSize(.small) }
+        if s.installed {
+          Button("Uninstall \(kind.manager)", role: .destructive) { model.uninstallManager(kind) }
+            .controlSize(.small).disabled(model.isBusy)
+        } else {
+          Button("Install \(kind.manager)") { model.installManager(kind) }
+            .controlSize(.small).disabled(model.isBusy)
+        }
+      },
+      content: {
+        if s.installed {
+          BlockSection(title: "INSTALL A VERSION") {
+            InstallField(kind: kind, model: model)
+          }
+          BlockSection(title: "INSTALLED VERSIONS") {
+            if s.versions.isEmpty {
+              Text("None yet").font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(s.versions.reversed(), id: \.self) { v in versionRow(v) }
+          }
+        }
+      })
+  }
+
+  private func versionRow(_ v: String) -> some View {
+    let isDefault = v == s.defaultVersion
+    return HStack(spacing: 8) {
+      Text(v).font(.callout.monospacedDigit())
+      if isDefault {
+        Text("Default").font(.caption2.weight(.semibold)).foregroundStyle(.green)
+          .padding(.horizontal, 6).padding(.vertical, 2).background(.green.opacity(0.15), in: Capsule())
+      }
+      Spacer()
+      if !isDefault {
+        Button("Set default") { model.setDefault(kind, v) }.controlSize(.small).disabled(model.isBusy)
+      }
+      Button { model.remove(kind, v) } label: { Image(systemName: "trash") }
+        .buttonStyle(.borderless).foregroundStyle(.red).help("Remove").disabled(model.isBusy)
+        .accessibilityLabel("Remove \(v)")
+    }
+  }
+}
+
+/// Quick switch for the global default Node.js / Python version. Everything else (installing
+/// managers and versions) lives in Settings.
+struct VersionsCard: View {
+  @ObservedObject var model: VersionsModel
+
+  private var kinds: [VersionsModel.Kind] {
+    VersionsModel.Kind.allCases.filter { !model.state($0).versions.isEmpty }
+  }
+
+  var body: some View {
+    if !kinds.isEmpty {
+      VStack(spacing: 0) {
+        HStack {
+          Text("DEFAULT VERSIONS").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).tracking(0.6)
+          Spacer()
+        }
+        .padding(.horizontal, 4).padding(.bottom, 8)
+        ForEach(Array(kinds.enumerated()), id: \.element) { i, k in
+          if i > 0 { Divider().padding(.vertical, 8) }
+          row(k)
+        }
+      }
+      .card()
+    }
+  }
+
+  private func row(_ k: VersionsModel.Kind) -> some View {
+    let s = model.state(k)
+    return HStack(spacing: 10) {
+      ServiceIcon(id: k.rawValue, symbol: k.symbol, tint: k.tint, size: 30)
+      Text(k.title).font(.callout.weight(.medium))
+      Spacer(minLength: 6)
+      if model.isBusy { ProgressView().controlSize(.small) }
+      Menu {
+        ForEach(s.versions.reversed(), id: \.self) { v in
+          Button {
+            model.setDefault(k, v)
+          } label: {
+            if v == s.defaultVersion { Label(v, systemImage: "checkmark") } else { Text(v) }
+          }
+        }
+      } label: {
+        Text(s.defaultVersion ?? String(localized: "Not set"))
+      }
+      .menuStyle(.borderlessButton).fixedSize().disabled(model.isBusy)
+    }
+  }
+}
+
+/// Type or pick a version, then press Install. Picking from the menu only fills the field.
+struct InstallField: View {
+  let kind: VersionsModel.Kind
+  @ObservedObject var model: VersionsModel
+
+  private var text: Binding<String> {
+    Binding(get: { model.drafts[kind] ?? "" }, set: { model.drafts[kind] = $0 })
+  }
+  private var isEmpty: Bool { text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      HStack(spacing: 6) {
+        Image(systemName: "number").font(.caption).foregroundStyle(.tertiary)
+        TextField(
+          "", text: text,
+          prompt: Text(kind == .node ? "Version, e.g. 20.11.0" : "Version, e.g. 3.12.4")
+        )
+        .textFieldStyle(.plain).labelsHidden().onSubmit(go)
+        if !isEmpty {
+          Button { text.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill") }
+            .buttonStyle(.plain).foregroundStyle(.tertiary).help("Clear")
+        }
+        Divider().frame(height: 16)
+        suggestions
+      }
+      .padding(.horizontal, 10).padding(.vertical, 7)
+      .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+      .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
+
+      Button(action: go) {
+        Label("Install", systemImage: "arrow.down.circle.fill")
+      }
+      .buttonStyle(.borderedProminent).controlSize(.regular)
+      .disabled(model.isBusy || isEmpty)
+    }
+  }
+
+  /// Recent releases; choosing one fills the field and does nothing else.
+  private var suggestions: some View {
+    Menu {
+      let list = model.state(kind).available
+      if list.isEmpty {
+        Text("Loading versions…")
+      } else {
+        ForEach(list, id: \.self) { v in
+          Button(v == "node" ? "Latest release" : v) { text.wrappedValue = v == "node" ? "latest" : v }
+        }
+      }
+    } label: {
+      Text("Recent")
+    }
+    .menuStyle(.borderlessButton).fixedSize()
+    .onAppear { model.loadAvailable(kind) }
+  }
+
+  private func go() {
+    guard !model.isBusy, !isEmpty else { return }
+    model.install(kind, version: text.wrappedValue)
+    text.wrappedValue = ""
   }
 }

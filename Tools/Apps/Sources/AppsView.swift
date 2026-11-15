@@ -6,14 +6,43 @@ struct AppsView: View {
 
   var body: some View {
     VStack(spacing: 10) {
-      VStack(spacing: 0) {
-        ForEach(Array(AppsModel.catalog.enumerated()), id: \.element.id) { i, app in
-          if i > 0 { Divider().padding(.vertical, 6) }
-          row(app)
+      if model.visible.isEmpty && model.toolSwitches.isEmpty {
+        Text("No apps selected. Choose some in Settings ▸ Apps.")
+          .font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 16).card()
+      } else {
+        VStack(spacing: 0) {
+          ForEach(Array(model.toolSwitches.enumerated()), id: \.element.id) { i, sw in
+            if i > 0 { Divider().padding(.vertical, 6) }
+            switchRow(sw)
+          }
+          ForEach(Array(model.visible.enumerated()), id: \.element.id) { i, app in
+            if i > 0 || !model.toolSwitches.isEmpty { Divider().padding(.vertical, 6) }
+            row(app)
+          }
+        }
+        .card()
+      }
+      if let n = model.notice { Text(n).font(.caption).foregroundStyle(.red) }
+    }
+  }
+
+  /// One of Kitbag's own tools, switched like the apps below it.
+  private func switchRow(_ sw: ToolSwitch) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: sw.symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+        .frame(width: 28, height: 28)
+        .background(Color.red.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+      VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 5) { Text("Kitbag"); Text(sw.name) }.font(.callout.weight(.medium))
+        if let e = sw.error {
+          Text(e).font(.caption).foregroundStyle(.red).lineLimit(2)
+        } else {
+          Text(sw.isOn ? "On" : "Off").font(.caption).foregroundStyle(sw.isOn ? .green : .secondary)
         }
       }
-      .card()
-      if let n = model.notice { Text(n).font(.caption).foregroundStyle(.red) }
+      Spacer()
+      Toggle(sw.name, isOn: Binding(get: { sw.isOn }, set: { sw.set($0) }))
+        .labelsHidden().toggleStyle(.switch).controlSize(.small)
     }
   }
 
@@ -37,17 +66,31 @@ struct AppsView: View {
   }
 }
 
-/// One row per app with a shortcut to macOS's own menu bar list, the only switch that works for them.
+/// Pick which apps the Apps tab lists, and open macOS's own menu bar list (the only switch that
+/// works for their icons).
 struct AppsSettingsView: View {
   @ObservedObject var model: AppsModel
 
   var body: some View {
-    ForEach(AppsModel.catalog.filter { model.installed.contains($0.id) }) { app in
+    ForEach(AppsModel.catalog) { app in
+      let installed = model.installed.contains(app.id)
       HStack(spacing: 10) {
-        Image(nsImage: model.icon(app, size: 22)).resizable().frame(width: 22, height: 22)
-        Text("\(app.name)'s menu bar icon")
-        Spacer()
-        Button("Manage in System Settings") { AppMenuIcon.openSystemSettings() }.controlSize(.small)
+        Toggle(
+          isOn: Binding(get: { !model.hidden.contains(app.id) }, set: { model.setShown(app, $0) })
+        ) {
+          HStack(spacing: 10) {
+            Image(nsImage: model.icon(app, size: 22)).resizable().frame(width: 22, height: 22)
+              .opacity(installed ? 1 : 0.4)
+            VStack(alignment: .leading, spacing: 1) {
+              Text("Show \(app.name)")
+              if !installed { Text("Not installed").font(.caption).foregroundStyle(.secondary) }
+            }
+          }
+        }
+        if installed {
+          Button("Menu bar icon…") { AppMenuIcon.openSystemSettings() }.controlSize(.small)
+            .help("Manage \(app.name)'s menu bar icon in System Settings")
+        }
       }
     }
   }

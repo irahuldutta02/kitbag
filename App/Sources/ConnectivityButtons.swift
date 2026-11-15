@@ -4,16 +4,21 @@ import SwiftUI
 /// Wi-Fi and Bluetooth in the corner of the menu: the icon shows the state, a click opens macOS's own control.
 struct ConnectivityButtons: View {
   @ObservedObject var status: ConnectivityStatus
+  @ObservedObject private var layout = MenuLayout.shared
 
   var body: some View {
     HStack(spacing: 6) {
-      button(.wifi, label: wifiLabel, active: status.wifi == .connected) {
-        Image(systemName: status.wifi == .off ? "wifi.slash" : "wifi")
-          .resizable().scaledToFit().frame(width: 16, height: 16)
+      if layout.isShown(MenuLayout.wifi) {
+        button(.wifi, label: wifiLabel, active: status.wifi == .connected) {
+          Image(systemName: status.wifi == .off ? "wifi.slash" : "wifi")
+            .resizable().scaledToFit().frame(width: 16, height: 16)
+        }
       }
-      button(.bluetooth, label: bluetoothLabel, active: status.bluetooth == .connected) {
-        BluetoothGlyph().frame(width: 10, height: 16)
-          .opacity(status.bluetooth == .off ? 0.35 : 1)
+      if layout.isShown(MenuLayout.bluetooth) {
+        button(.bluetooth, label: bluetoothLabel, active: status.bluetooth == .connected) {
+          BluetoothGlyph().frame(width: 10, height: 16)
+            .opacity(status.bluetooth == .off ? 0.35 : 1)
+        }
       }
     }
   }

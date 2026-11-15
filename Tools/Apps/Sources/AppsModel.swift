@@ -14,6 +14,7 @@ final class AppsModel: ObservableObject {
     ManagedApp(id: "gdrive", name: "Google Drive", bundleID: "com.google.drivefs"),
     ManagedApp(id: "pdrive", name: "Proton Drive", bundleID: "ch.protonmail.drive"),
     ManagedApp(id: "wispr", name: "Wispr Flow", bundleID: "com.electron.wispr-flow"),
+    ManagedApp(id: "openwhispr", name: "OpenWhispr", bundleID: "com.gizmolabs.openwhispr"),
     ManagedApp(id: "finetune", name: "FineTune", bundleID: "com.finetuneapp.FineTune"),
   ]
 
@@ -21,6 +22,18 @@ final class AppsModel: ObservableObject {
   @Published private(set) var busy: Set<String> = []
   @Published private(set) var installed: Set<String> = []
   @Published var notice: String?
+  /// Kitbag's own tools that can be switched here too (for example Dictation).
+  @Published var toolSwitches: [ToolSwitch] = []
+  /// Apps the user chose not to show in the Apps tab.
+  @Published private(set) var hidden: Set<String> = Set(
+    UserDefaults.standard.stringArray(forKey: "kitbag.apps.hidden") ?? [])
+
+  var visible: [ManagedApp] { Self.catalog.filter { !hidden.contains($0.id) } }
+
+  func setShown(_ app: ManagedApp, _ on: Bool) {
+    if on { hidden.remove(app.id) } else { hidden.insert(app.id) }
+    UserDefaults.standard.set(Array(hidden), forKey: "kitbag.apps.hidden")
+  }
   private var observers: [NSObjectProtocol] = []
 
   func observe() {

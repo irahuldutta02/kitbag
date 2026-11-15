@@ -100,6 +100,17 @@ public final class ToolManager: ObservableObject {
     for tool in active.values { tool.receiveFileSenders(senders) }
   }
 
+  /// Tells every active tool which on/off switches the Apps tab can show.
+  private func publishToolSwitches() {
+    let switches = descriptors.filter(\.listedInApps).map { d in
+      ToolSwitch(
+        id: d.id, name: d.name, symbol: d.symbol,
+        isOn: isEnabled(d.id) && isAvailable(d), error: errors[d.id],
+        set: { [weak self] on in self?.setEnabled(d.id, on) })
+    }
+    for tool in active.values { tool.receiveToolSwitches(switches) }
+  }
+
   private func activate(_ d: ToolDescriptor) {
     guard active[d.id] == nil else { return }
     let tool = d.make()
@@ -109,9 +120,11 @@ public final class ToolManager: ObservableObject {
       errors[d.id] = nil
       tool.menuVisibilityChanged(d.id == visibleToolID)
       publishFileSenders()
+      publishToolSwitches()
     } catch {
       tool.stop()
       errors[d.id] = error.localizedDescription
+      publishToolSwitches()
     }
   }
 
@@ -119,5 +132,6 @@ public final class ToolManager: ObservableObject {
     active.removeValue(forKey: id)?.stop()
     errors[id] = nil
     publishFileSenders()
+    publishToolSwitches()
   }
 }

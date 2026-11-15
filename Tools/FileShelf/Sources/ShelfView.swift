@@ -23,15 +23,35 @@ struct ShelfView: View {
             Text("Drop files or folders here").font(.callout.weight(.medium))
             Text("They wait here until you drag them out.")
               .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+              Button { model.addFromPicker() } label: { Label("Add files…", systemImage: "plus") }
+              Button { model.pasteFromClipboard() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                .keyboardShortcut("v", modifiers: .command)
+            }
+            .controlSize(.small)
           }
           .frame(maxWidth: .infinity, minHeight: 150)
         } else {
           VStack(spacing: 10) {
             StackView(model: model)
             Text("Drag the stack to a folder or app").font(.caption).foregroundStyle(.secondary)
-            HStack {
-              Text(footer).font(.caption.weight(.medium))
+            HStack(spacing: 10) {
+              Button { model.listExpanded.toggle() } label: {
+                HStack(spacing: 4) {
+                  Text(footer).font(.caption.weight(.medium))
+                  Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                    .rotationEffect(.degrees(model.listExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .help(model.listExpanded ? "Hide files" : "Show files")
               Spacer()
+              Button { model.pasteFromClipboard() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                .controlSize(.small).keyboardShortcut("v", modifiers: .command)
+                .help("Paste a copied file, image, link or text (⌘V)")
+              Button { model.addFromPicker() } label: { Label("Add", systemImage: "plus") }
+                .controlSize(.small).help("Add files from your Mac")
               Button(role: .destructive) {
                 model.clear()
               } label: {
@@ -39,6 +59,7 @@ struct ShelfView: View {
               }
               .controlSize(.small)
             }
+            if model.listExpanded { ItemList(model: model) }
           }
         }
       }
@@ -55,6 +76,10 @@ struct ShelfView: View {
               lineWidth: model.dropTargeted ? 2 : 1,
               dash: model.items.isEmpty ? [5, 4] : []))
       )
+
+      if !model.items.isEmpty, !model.convertFormats.isEmpty || model.converting != nil || model.pendingConvert != nil {
+        ConvertRow(model: model)
+      }
 
       // Each destination app (Blip) shows its on/off switch while it is off or nothing is on the
       // shelf; once it is on and there is something to send, only "Send with …" is shown.
@@ -77,7 +102,8 @@ struct ShelfView: View {
   }
 
   private var footer: String {
-    let n = String(localized: "\(model.items.count) items")
+    let n = model.items.count == 1
+      ? String(localized: "1 item") : String(localized: "\(model.items.count) items")
     return model.missing.isEmpty
       ? n : n + " · " + String(localized: "\(model.missing.count) missing")
   }
@@ -292,5 +318,237 @@ private struct PlainSenderButton: View {
     } isTargeted: {
       model.targetedSender = $0 ? sender.id : nil
     }
+  }
+}
+
+/// "Convert to" with one button per format that fits what is on the shelf. Tapping one shows what
+/// will happen (sizes before and after) and asks where to save. While a conversion runs it becomes
+/// a progress bar with a Cancel button.
+private struct ConvertRow: View {
+  @ObservedObject var model: ShelfModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      if let p = model.converting {
+        progress(p)
+      } else if let request = model.pendingConvert {
+        confirm(request)
+      } else {
+        picker
+      }
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .animation(.default, value: model.pendingConvert)
+  }
+
+  // MARK: Step 1: pick a format
+
+  private var picker: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Label("Convert to", systemImage: "arrow.triangle.2.circlepath")
+        .font(.callout.weight(.semibold)).lineLimit(1)
+      HStack(spacing: 6) {
+        ForEach(model.convertFormats) { f in
+          Button { model.requestConvert(.format(f)) } label: {
+            Text(f.label).font(.callout.weight(.semibold))
+              .frame(maxWidth: .infinity).padding(.vertical, 7)
+              .background(Color.accentColor.opacity(0.2), in: Capsule())
+              .contentShape(Capsule())
+          }
+          .buttonStyle(PressableStyle())
+          .help("Convert to \(f.label)")
+        }
+      }
+      if model.canOptimize {
+        HStack(spacing: 6) {
+          action("Compress", "arrow.down.right.and.arrow.up.left") { model.requestConvert(.compress) }
+          action("Remove data", "eye.slash") { model.requestConvert(.cleanOnly) }
+        }
+      }
+      if model.canMerge {
+        Button { model.requestConvert(.mergePDF) } label: {
+          Label("Combine into one PDF", systemImage: "doc.on.doc.fill")
+            .font(.callout.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 7)
+            .background(Color.primary.opacity(0.08), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private func action(_ title: LocalizedStringKey, _ symbol: String, run: @escaping () -> Void) -> some View {
+    Button(action: run) {
+      Label(title, systemImage: symbol).font(.callout.weight(.medium)).lineLimit(1)
+        .frame(maxWidth: .infinity).padding(.vertical, 7)
+        .background(Color.primary.opacity(0.1), in: Capsule())
+        .contentShape(Capsule())
+    }
+    .buttonStyle(PressableStyle())
+  }
+
+  // MARK: Step 2: what will happen, then where to save
+
+  private func confirm(_ request: ConvertRequest) -> some View {
+    let plan = model.plan(for: request)
+    let sameFormat = request == .compress || request == .cleanOnly
+    let compressing = model.compressEnabled && request != .mergePDF
+    let nothingToDo = sameFormat && !model.compressEnabled && !model.cleanEnabled
+    return VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text(heading(request)).font(.callout.weight(.semibold)).lineLimit(1)
+        Spacer()
+        Button("Cancel") { model.cancelRequest() }.controlSize(.small).buttonStyle(.borderless)
+      }
+      SizeComparison(rows: model.estimateRows, estimating: model.estimating)
+      if request != .mergePDF {
+        Toggle("Compress", isOn: $model.compressEnabled).toggleStyle(.checkbox).font(.callout)
+        if compressing {
+          Picker("Strength", selection: $model.compressLevel) {
+            ForEach(CompressLevel.allCases) { Text($0.label).tag($0) }
+          }
+          .pickerStyle(.segmented).labelsHidden()
+        }
+      }
+      if sameFormat {
+        Toggle("Remove hidden data", isOn: $model.cleanEnabled).toggleStyle(.checkbox).font(.callout)
+          .help("Camera info, location and AI details such as prompts and content credentials")
+      } else if plan.hasMetadata {
+        Toggle("Remove hidden data", isOn: $model.stripMetadata).toggleStyle(.checkbox).font(.callout)
+          .help("Camera info, location and AI details such as prompts and content credentials")
+      }
+      VStack(spacing: 8) {
+        HStack(spacing: 8) {
+          choice("Original location", "folder") { model.runPending(saveTo: .original) }
+          choice("Choose folder…", "folder.badge.plus") { model.chooseFolderAndRun() }
+        }
+        if sameFormat {
+          choice("Replace originals", "arrow.triangle.2.circlepath") { model.runPending(saveTo: .replace) }
+        }
+      }
+      .disabled(nothingToDo)
+      .opacity(nothingToDo ? 0.5 : 1)
+    }
+  }
+
+  private func progress(_ p: ConvertProgress) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 10) {
+        ProgressView(value: Double(p.done), total: Double(max(p.total, 1)))
+        Text("\(p.done) of \(p.total)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        Button("Cancel") { model.cancelConvert() }.controlSize(.small)
+      }
+      Text("Converting to \(p.title)…").font(.caption).foregroundStyle(.secondary)
+    }
+  }
+
+  private func heading(_ r: ConvertRequest) -> String {
+    switch r {
+    case .format(let f): return String(localized: "Convert to \(f.label)")
+    case .mergePDF: return String(localized: "Combine into one PDF")
+    case .compress, .cleanOnly:
+      switch (model.compressEnabled, model.cleanEnabled) {
+      case (true, true): return String(localized: "Compress and remove data")
+      case (false, true): return String(localized: "Remove hidden data")
+      case (true, false): return String(localized: "Compress")
+      default: return String(localized: "Choose what to do")
+      }
+    }
+  }
+
+  private func choice(_ title: LocalizedStringKey, _ symbol: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Label(title, systemImage: symbol).font(.callout.weight(.medium)).lineLimit(1)
+        .frame(maxWidth: .infinity).padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.2), in: Capsule())
+        .contentShape(Capsule())
+    }
+    .buttonStyle(PressableStyle())
+  }
+}
+
+/// Total size now and after converting, with the saving.
+private struct SizeComparison: View {
+  let rows: [EstimateRow]
+  let estimating: Bool
+
+  private static let formatter: ByteCountFormatter = {
+    let f = ByteCountFormatter()
+    f.countStyle = .file
+    return f
+  }()
+
+  private func bytes(_ n: Int64) -> String { Self.formatter.string(fromByteCount: n) }
+
+  var body: some View {
+    let done = rows.filter { $0.after != nil }
+    let before = done.map(\.before).reduce(0, +)
+    let after = done.compactMap(\.after).reduce(0, +)
+    HStack(spacing: 6) {
+      if done.isEmpty {
+        if estimating { ProgressView().controlSize(.small) }
+        Text(estimating ? "Working out sizes…" : "Size can't be estimated")
+          .font(.caption).foregroundStyle(.secondary)
+      } else {
+        Text("\(bytes(before)) → \(bytes(after))").font(.callout.weight(.semibold).monospacedDigit())
+        let c = ShelfFormat.change(before, after)
+        Text(c.text).font(.caption.weight(.semibold)).foregroundStyle(c.color)
+        if estimating { ProgressView().controlSize(.mini) }
+      }
+    }
+  }
+}
+
+enum ShelfFormat {
+  static let formatter: ByteCountFormatter = {
+    let f = ByteCountFormatter()
+    f.countStyle = .file
+    return f
+  }()
+
+  static func bytes(_ n: Int64) -> String { formatter.string(fromByteCount: n) }
+
+  static func change(_ before: Int64, _ after: Int64) -> (text: String, color: Color) {
+    guard before > 0 else { return ("", .secondary) }
+    let pct = Int((Double(after - before) / Double(before) * 100).rounded())
+    if pct == 0 { return (String(localized: "same size"), .secondary) }
+    return pct < 0
+      ? (String(localized: "\(-pct)% smaller"), .green) : (String(localized: "\(pct)% larger"), .orange)
+  }
+}
+
+/// Every file on the shelf, with its size (or before → after while converting) and a remove button.
+private struct ItemList: View {
+  @ObservedObject var model: ShelfModel
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 2) {
+        ForEach(model.items) { item in
+          let missing = model.missing.contains(item.id)
+          let est = model.estimateRows.first { $0.id == item.id }
+          HStack(spacing: 8) {
+            Image(nsImage: model.icon(for: item.id, size: 18)).resizable().frame(width: 18, height: 18)
+            Text(item.name).font(.caption).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 6)
+            if missing {
+              Text("missing").font(.caption2).foregroundStyle(.red)
+            } else if let est, let after = est.after {
+              Text("\(ShelfFormat.bytes(est.before)) → \(ShelfFormat.bytes(after))")
+                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+            } else if let size = model.fileSize(for: item.id) {
+              Text(ShelfFormat.bytes(size)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            Button { model.remove(item.id) } label: { Image(systemName: "xmark.circle.fill") }
+              .buttonStyle(.plain).foregroundStyle(.tertiary).help("Remove from the shelf")
+              .accessibilityLabel("Remove \(item.name)")
+          }
+          .padding(.vertical, 2)
+        }
+      }
+    }
+    .frame(maxHeight: 150)
   }
 }

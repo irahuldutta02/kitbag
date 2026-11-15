@@ -100,7 +100,7 @@ public struct TerminalView: View {
       }
       HStack {
         Text("$").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
-        TextField("docker ps", text: $model.command)
+        TextField("Run your own commands here…", text: $model.command)
           .font(.system(size: 12, design: .monospaced))
           .textFieldStyle(.plain)
           .onSubmit { model.runTyped() }

@@ -22,6 +22,8 @@ public final class AppsTool: KitbagTool {
     model = nil
   }
 
+  public func receiveToolSwitches(_ switches: [ToolSwitch]) { model?.toolSwitches = switches }
+
   public func menuVisibilityChanged(_ visible: Bool) { if visible { model?.refresh() } }
 
   public func makeMenuView() -> AnyView {

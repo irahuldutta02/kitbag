@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var settingsWindow: NSWindow?
   private var sizeObservation: NSKeyValueObservation?
   private var appearanceObservation: NSKeyValueObservation?
+  private var outsideClickMonitor: Any?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     manager.bootstrap()
@@ -77,9 +78,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     connectivity.start()
+    // A transient popover doesn't dismiss on clicks in other apps (e.g. full-screen ones),
+    // so also watch for mouse-downs delivered to other processes.
+    outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+      matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.popover.performClose(nil) }
+    }
   }
 
   func popoverDidClose(_ notification: Notification) {
+    if let monitor = outsideClickMonitor {
+      NSEvent.removeMonitor(monitor)
+      outsideClickMonitor = nil
+    }
     manager.setVisibleTool(nil)
     connectivity.stop()
     state.dropMode = false
@@ -209,7 +221,7 @@ struct PopoverView: View {
 
   private var tabs: [(descriptor: ToolDescriptor, tool: any KitbagTool)] {
     manager.enabledTools.filter {
-      $0.descriptor.showsTab && (!state.dropMode || $0.tool.acceptsFileDrops)
+      $0.descriptor.showsTab && $0.descriptor.showsMenuTab && (!state.dropMode || $0.tool.acceptsFileDrops)
     }
   }
   private var currentID: String? {
@@ -229,7 +241,7 @@ struct PopoverView: View {
                 ToolIcon(tab.descriptor)
                   .font(.system(size: 14, weight: .medium))
                   .foregroundStyle(on ? Color.white : Color.secondary)
-                  .frame(width: 40, height: 28)
+                  .frame(width: tabs.count > 6 ? 32 : 40, height: 28)
                   .background {
                     if on { Capsule().fill(Color.accentColor) }
                   }
@@ -278,7 +290,7 @@ struct PopoverView: View {
       .padding(.horizontal, 4)
     }
     .padding(14)
-    .frame(width: 360)
+    .frame(width: tabs.count > 6 ? 400 : 360)  // more tabs need more room
     .frame(maxHeight: .infinity, alignment: .top)  // never re-center while resizing
     .onAppear { manager.setVisibleTool(currentID) }
     .onChange(of: currentID) { _, new in manager.setVisibleTool(new) }

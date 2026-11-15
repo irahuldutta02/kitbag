@@ -9,6 +9,7 @@ public final class DevToolsTool: KitbagTool {
 
   private var model: DevToolsModel?
   private let services = ServicesModel()
+  private let versions = VersionsModel()
   public init() {}
 
   public func start() throws {
@@ -25,10 +26,10 @@ public final class DevToolsTool: KitbagTool {
 
   public func menuVisibilityChanged(_ visible: Bool) { services.setPolling(visible) }
 
-  public func makeSettingsView() -> AnyView? { AnyView(DevToolsSettingsView(model: services)) }
+  public func makeSettingsView() -> AnyView? { AnyView(DevToolsSettingsView(model: services, versions: versions)) }
 
   public func makeMenuView() -> AnyView {
     guard let model else { return AnyView(EmptyView()) }
-    return AnyView(DevToolsView(model: model, services: services))
+    return AnyView(DevToolsView(model: model, services: services, versions: versions))
   }
 }

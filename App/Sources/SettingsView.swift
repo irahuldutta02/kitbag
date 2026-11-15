@@ -34,9 +34,13 @@ struct SettingsView: View {
     .overlay(alignment: .bottomTrailing) { terminalButton }
     .ignoresSafeArea()
     .frame(minWidth: 800, minHeight: 540)
-    .onAppear { manager.setVisibleTool(nav.page == "general" ? nil : nav.page) }
-    .onChange(of: nav.page) { _, new in manager.setVisibleTool(new == "general" ? nil : new) }
+    .onAppear { manager.setVisibleTool(Self.toolPage(nav.page)) }
+    .onChange(of: nav.page) { _, new in manager.setVisibleTool(Self.toolPage(new)) }
     .onDisappear { manager.setVisibleTool(nil) }
+  }
+
+  private static func toolPage(_ page: String) -> String? {
+    ["general", "connectivity"].contains(page) ? nil : page
   }
 
   /// Matches the window's own corner radius, so the sidebar and the button follow its outline.
@@ -67,6 +71,9 @@ struct SettingsView: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
       ForEach(tools) { d in
         row(id: d.id, title: Text(d.name), tint: Look.tint(d.id)) { ToolIcon(d) }
+      }
+      row(id: "connectivity", title: Text("Connectivity"), tint: .blue) {
+        Image(systemName: "antenna.radiowaves.left.and.right").font(.system(size: 12, weight: .semibold))
       }
       Spacer(minLength: 12)
       row(id: "general", title: Text("Settings"), tint: .gray) {
@@ -100,7 +107,9 @@ struct SettingsView: View {
     VStack(spacing: 0) {
       Spacer().frame(height: 44)  // title bar area; each page has its own header card
       Form {
-        if nav.page == "general" {
+        if nav.page == "connectivity" {
+          ConnectivityPage()
+        } else if nav.page == "general" {
           AppearanceSection()
           LoginItemSection()
         } else if let d = tools.first(where: { $0.id == nav.page }) {
@@ -115,6 +124,8 @@ struct SettingsView: View {
       }
       .formStyle(.grouped)
       .scrollContentBackground(.hidden)
+      .overlay(alignment: .bottom) { ToastOverlay() }
+      .animation(.easeInOut(duration: 0.2), value: Toast.shared.message)
       if terminal.isOpen {
         Divider()
         TerminalView(model: terminal).padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 20).frame(height: 252)
@@ -127,7 +138,7 @@ struct SettingsView: View {
 enum Look {
   static func tint(_ id: String) -> Color {
     ["fileshelf": .blue, "systemmonitor": .green, "speedtest": .orange, "devtools": .purple,
-      "audio": .pink, "blip": .indigo, "apps": .teal][id] ?? .gray
+      "audio": .pink, "blip": .indigo, "apps": .teal, "dictation": .red][id] ?? .gray
   }
 
   static let blurb: [String: LocalizedStringKey] = [
@@ -136,11 +147,15 @@ enum Look {
     "speedtest": "Measure your internet download and upload speed.",
     "devtools": "Pick colors, measure the screen, and run Docker, MongoDB and PostgreSQL.",
     "audio": "Switch your audio input and output devices.",
-    "apps": "Turn Google Drive, Proton Drive, Wispr Flow and FineTune on or off without opening them.",
+    "apps": "Turn Google Drive, Proton Drive, Wispr Flow, OpenWhispr and FineTune on or off without opening them.",
+    "dictation": "Hold a key, speak, and your words are transcribed, cleaned up and typed into the app in front of you.",
   ]
 
+  /// Tools whose settings view builds its own sections instead of one options section.
+  static let ownSections: Set<String> = ["dictation"]
+
   static let optionsTitle: [String: LocalizedStringKey] = [
-    "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Services", "apps": "Menu bar icons",
+    "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Runtimes & Services", "apps": "Apps to show", "dictation": "Dictation",
   ]
 
   static func tile<V: View>(_ icon: V, _ color: Color, size: CGFloat) -> some View {
@@ -162,7 +177,11 @@ private struct ToolPage: View {
     if !addOn, available, manager.isEnabled(descriptor.id),
       let tool = manager.active[descriptor.id], let settings = tool.makeSettingsView()
     {
-      Section { settings } header: { Text(Look.optionsTitle[descriptor.id] ?? "Options") }
+      if Look.ownSections.contains(descriptor.id) {
+        settings  // lays out its own sections
+      } else {
+        Section { settings } header: { Text(Look.optionsTitle[descriptor.id] ?? "Options") }
+      }
     }
   }
 
@@ -322,19 +341,36 @@ private struct AppearanceSection: View {
 
   var body: some View {
     Section {
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Liquid Glass")
+      LabeledContent("Liquid Glass") {
         HStack(spacing: 10) {
-          Text("Solid").font(.caption).foregroundStyle(.secondary)
-          Slider(value: $glass.transparency, in: 0...1)
-          Text("Clear").font(.caption).foregroundStyle(.secondary)
+          Slider(value: $glass.transparency, in: 0...1).frame(width: 240)
+          Text("\(Int((glass.transparency * 100).rounded()))%")
+            .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            .frame(width: 40, alignment: .trailing)
         }
-        Text("How see-through the Kitbag window and the menu bar popup are.")
-          .font(.caption).foregroundStyle(.secondary)
       }
-      .padding(.vertical, 2)
     } header: {
       Text("Appearance")
+    }
+  }
+}
+
+/// The Wi-Fi and Bluetooth buttons in the menu pop-up: one switch each.
+private struct ConnectivityPage: View {
+  @ObservedObject private var layout = MenuLayout.shared
+
+  var body: some View {
+    Section {
+      row(MenuLayout.wifi, "Wi-Fi") { Image(systemName: "wifi").font(.system(size: 12, weight: .semibold)) }
+      row(MenuLayout.bluetooth, "Bluetooth") { BluetoothGlyph().frame(width: 8, height: 13) }
+    } header: {
+      Text("Connectivity")
+    }
+  }
+
+  private func row<I: View>(_ id: String, _ name: LocalizedStringKey, @ViewBuilder icon: () -> I) -> some View {
+    Toggle(isOn: Binding(get: { layout.isShown(id) }, set: { layout.setShown(id, $0) })) {
+      HStack(spacing: 10) { Look.tile(icon(), .blue, size: 24); Text(name) }
     }
   }
 }

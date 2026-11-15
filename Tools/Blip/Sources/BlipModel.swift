@@ -144,7 +144,8 @@ final class BlipModel: ObservableObject {
   static func performService(_ files: [URL]) -> Bool {
     let pb = NSPasteboard(name: NSPasteboard.Name("com.irahuldutta.kitbag.blip"))
     pb.clearContents()
-    pb.writeObjects(files as [NSURL])
+    // Files go as files; a pasted link goes as a link and pasted text as text.
+    pb.writeObjects(files.map(PastedItems.payload(for:)))
     return NSPerformService("Blip…", pb)
   }
 }

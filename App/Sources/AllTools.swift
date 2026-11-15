@@ -2,6 +2,7 @@ import Apps
 import Audio
 import Blip
 import DevTools
+import Dictation
 import FileShelf
 import KitbagCore
 import SpeedTest
@@ -17,5 +18,6 @@ enum AllTools {
     BlipTool.descriptor,
     AudioTool.descriptor,
     AppsTool.descriptor,
+    DictationTool.descriptor,
   ]
 }

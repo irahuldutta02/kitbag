@@ -18,6 +18,27 @@ public protocol KitbagTool: AnyObject {
   /// the senders of all active tools to every tool through `receiveFileSenders`.
   var fileSenders: [FileSender] { get }
   func receiveFileSenders(_ senders: [FileSender])
+  /// Tools that want a quick on/off switch in the Apps tab. The manager passes them to every tool.
+  func receiveToolSwitches(_ switches: [ToolSwitch])
+}
+
+/// A tool's on/off switch, offered to the Apps tab so it can sit next to the other apps.
+public struct ToolSwitch: Identifiable {
+  public let id: String
+  public let name: LocalizedStringKey
+  public let symbol: String
+  public let isOn: Bool
+  /// Why the tool couldn't start, if it failed.
+  public let error: String?
+  public let set: @MainActor (Bool) -> Void
+  public init(id: String, name: LocalizedStringKey, symbol: String, isOn: Bool, error: String?, set: @escaping @MainActor (Bool) -> Void) {
+    self.id = id
+    self.name = name
+    self.symbol = symbol
+    self.isOn = isOn
+    self.error = error
+    self.set = set
+  }
 }
 
 public struct FileSendResult {
@@ -73,6 +94,7 @@ extension KitbagTool {
   public var acceptsFileDrops: Bool { false }
   public var fileSenders: [FileSender] { [] }
   public func receiveFileSenders(_ senders: [FileSender]) {}
+  public func receiveToolSwitches(_ switches: [ToolSwitch]) {}
   public func menuVisibilityChanged(_ visible: Bool) {}
   public func makeSettingsView() -> AnyView? { nil }
 }
@@ -91,18 +113,24 @@ public struct ToolDescriptor: Identifiable {
   public let brewCask: String?
   /// False for tools that only add features to other tools and have no tab of their own.
   public let showsTab: Bool
+  /// False for tools that have a Settings page but no tab in the menu pop-up.
+  public let showsMenuTab: Bool
+  /// True to offer this tool's on/off switch in the Apps tab.
+  public let listedInApps: Bool
   public let make: @MainActor () -> any KitbagTool
 
   public init(
     id: String, name: LocalizedStringKey, symbol: String, defaultEnabled: Bool = true,
     customIcon: (@MainActor () -> AnyView)? = nil, requiresApp: String? = nil, brewCask: String? = nil,
-    showsTab: Bool = true,
+    showsTab: Bool = true, showsMenuTab: Bool = true, listedInApps: Bool = false,
     make: @escaping @MainActor () -> any KitbagTool
   ) {
     self.customIcon = customIcon
     self.requiresApp = requiresApp
     self.brewCask = brewCask
     self.showsTab = showsTab
+    self.showsMenuTab = showsMenuTab
+    self.listedInApps = listedInApps
     self.id = id
     self.name = name
     self.symbol = symbol

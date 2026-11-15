@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 
@@ -89,5 +90,74 @@ import Testing
 
   @Test func acceptsFileDrops() {
     #expect(FileShelfTool().acceptsFileDrops)
+  }
+}
+
+@Suite struct ConverterTests {
+  private func tempDir() throws -> URL {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    return d
+  }
+
+  private func png(in dir: URL, name: String = "a.png") throws -> URL {
+    let rep = NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: 20, pixelsHigh: 10, bitsPerSample: 8, samplesPerPixel: 4,
+      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    let u = dir.appendingPathComponent(name)
+    try rep.representation(using: .png, properties: [:])!.write(to: u)
+    return u
+  }
+
+  @Test func offersOnlySensibleFormats() throws {
+    let d = try tempDir()
+    let p = try png(in: d)
+    let t = d.appendingPathComponent("n.txt")
+    try "x".write(to: t, atomically: true, encoding: .utf8)
+    #expect(!Converter.formats(for: [p]).contains(.png))  // already a PNG
+    #expect(Converter.formats(for: [p]).contains(.jpeg))
+    #expect(Converter.formats(for: [t]).isEmpty)
+    #expect(Converter.formats(for: [d]).isEmpty)  // folders are never converted
+  }
+
+  @Test func convertsWithoutOverwriting() throws {
+    let d = try tempDir()
+    let p = try png(in: d)
+    let first = try Converter.convert(p, to: .jpeg, quality: 0.8, into: d)
+    let second = try Converter.convert(p, to: .jpeg, quality: 0.8, into: d)
+    #expect(first[0].lastPathComponent == "a.jpg")
+    #expect(second[0].lastPathComponent == "a 2.jpg")
+  }
+
+  @Test func mergesAndSplitsPDF() throws {
+    let d = try tempDir()
+    let a = try png(in: d, name: "a.png")
+    let b = try png(in: d, name: "b.png")
+    let merged = try Converter.merge([a, b], into: d)
+    #expect(try Converter.convert(merged.output, to: .png, quality: 1, into: d).count == 2)
+  }
+
+  @Test func unreadableFileIsAnError() throws {
+    let d = try tempDir()
+    let bad = d.appendingPathComponent("bad.png")
+    try "nope".write(to: bad, atomically: true, encoding: .utf8)
+    #expect(throws: ConvertError.self) { try Converter.convert(bad, to: .jpeg, quality: 1, into: d) }
+  }
+}
+
+@Suite struct ConverterEdgeCaseTests {
+  @Test func svgAndFoldersAreNotConvertible() throws {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    let svg = d.appendingPathComponent("v.svg")
+    try "<svg xmlns='http://www.w3.org/2000/svg'/>".write(to: svg, atomically: true, encoding: .utf8)
+    #expect(Converter.kind(of: svg) == .other)
+    #expect(Converter.kind(of: d) == .other)
+  }
+
+  @Test func mergedNames() {
+    let a = URL(fileURLWithPath: "/x/a.png"), b = URL(fileURLWithPath: "/x/b.pdf")
+    #expect(Converter.mergedName([a, b]) == "a + b")
+    #expect(Converter.mergedName([a, b, a]) == "a + 2 more")
   }
 }

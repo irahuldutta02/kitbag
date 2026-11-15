@@ -14,6 +14,8 @@
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Kitbag listens to your voice while you dictate.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Kitbag turns your speech into text for dictation.</string>
   <key>NSHumanReadableCopyright</key><string>Copyright © Rahul Dutta</string>
 </dict>
 </plist>

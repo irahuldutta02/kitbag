@@ -36,12 +36,15 @@ let package = Package(
     .target(name: "Apps", dependencies: ["KitbagCore"], path: "Tools/Apps/Sources"),
     .testTarget(name: "AppsTests", dependencies: ["Apps"], path: "Tools/Apps/Tests"),
 
+    .target(name: "Dictation", dependencies: ["KitbagCore"], path: "Tools/Dictation/Sources"),
+    .testTarget(name: "DictationTests", dependencies: ["Dictation"], path: "Tools/Dictation/Tests"),
+
     .executableTarget(
       name: "Kitbag",
       dependencies: [
         "KitbagCore", "FileShelf", "SystemMonitor", "SpeedTest", "DevTools",
         "Audio",
-        "Blip", "Apps",
+        "Blip", "Apps", "Dictation",
       ],
       path: "App/Sources"),
   ],
