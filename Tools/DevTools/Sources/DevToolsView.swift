@@ -122,9 +122,7 @@ struct ServicesCard: View {
     @ViewBuilder extra: () -> Extra
   ) -> some View {
     HStack(spacing: 10) {
-      Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-        .frame(width: 30, height: 30)
-        .background(tint.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      ServiceIcon(id: id, symbol: symbol, tint: tint, size: 30)
       VStack(alignment: .leading, spacing: 1) {
         Text(title).font(.callout.weight(.medium))
         HStack(spacing: 5) {
@@ -157,6 +155,14 @@ struct DevToolsSettingsView: View {
       installed: model.dockerInstalled, install: { model.installDocker() },
       uninstall: { model.uninstallDocker() })
     .onAppear { Task { await model.refresh() } }
+    // Docker's icon is drawn by an Electron tray that has no saved identity, so no setting from
+    // outside can hide it; macOS's own per-app switch in System Settings is the way.
+    HStack(spacing: 8) {
+      Text("Docker's own menu bar icon")
+      Spacer()
+      Button("Manage in System Settings") { AppMenuIcon.openSystemSettings() }
+        .controlSize(.small)
+    }
     ForEach(ServicesModel.services) { s in
       row(s.title, s.subtitle, symbol: s.symbol, tint: s.tint, id: s.id,
         installed: model.isInstalled(s), install: { model.install(s) },
@@ -170,8 +176,7 @@ struct DevToolsSettingsView: View {
     install: @escaping () -> Void, uninstall: @escaping () -> Void
   ) -> some View {
     HStack(spacing: 12) {
-      Image(systemName: symbol).foregroundStyle(.white).frame(width: 28, height: 28)
-        .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+      ServiceIcon(id: id, symbol: symbol, tint: tint, size: 28)
       VStack(alignment: .leading, spacing: 1) {
         Text(title)
         Text(subtitle).font(.caption).foregroundStyle(.secondary)

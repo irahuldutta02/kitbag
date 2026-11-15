@@ -1,3 +1,4 @@
+import Apps
 import Audio
 import Blip
 import DevTools
@@ -15,5 +16,6 @@ enum AllTools {
     DevToolsTool.descriptor,
     BlipTool.descriptor,
     AudioTool.descriptor,
+    AppsTool.descriptor,
   ]
 }

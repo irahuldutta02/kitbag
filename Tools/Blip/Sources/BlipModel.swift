@@ -3,9 +3,34 @@ import KitbagCore
 
 @MainActor
 final class BlipModel: ObservableObject {
-  @Published private(set) var running = false
-  @Published private(set) var busy = false
+  @Published private(set) var running = false {
+    didSet { power.isOn = running }
+  }
+  @Published private(set) var busy = false {
+    didSet { power.isBusy = busy }
+  }
   @Published var notice: String?
+
+  /// The shelf's on/off switch for Blip. Flipping it by hand is always allowed.
+  private(set) lazy var power = SenderPower { [weak self] on in
+    guard let self else { return }
+    Task { on ? await self.start() : await self.quit() }
+  }
+
+  // Blip is switched on and off by hand only; Kitbag never starts or stops it by itself.
+
+  static let iconIDs = [BlipTool.bundleID]
+  var iconVisible: Bool {
+    get { AppMenuIcon.isVisible(Self.iconIDs, unset: false) }
+    set {
+      AppMenuIcon.setVisible(newValue, Self.iconIDs)
+      objectWillChange.send()
+      // The icon is read when Blip starts: restart an idle Blip so the change shows now.
+      if running, !hasWindow {
+        Task { await quit(); await start() }
+      }
+    }
+  }
 
   private var appURL: URL? {
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: BlipTool.bundleID)
@@ -75,6 +100,19 @@ final class BlipModel: ObservableObject {
     }
   }
 
+  /// Blip shows a normal window while you pick who to send to or a transfer is running.
+  private var hasWindow: Bool {
+    let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: BlipTool.bundleID).map(\.processIdentifier))
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    return list.contains { w in
+      guard let pid = w[kCGWindowOwnerPID as String] as? Int32, pids.contains(pid),
+        (w[kCGWindowLayer as String] as? Int) == 0,
+        let b = w[kCGWindowBounds as String] as? [String: Double]
+      else { return false }
+      return (b["Width"] ?? 0) > 80 && (b["Height"] ?? 0) > 80
+    }
+  }
+
   /// Brings Blip forward; for a menu bar app this makes it show its window.
   func open() {
     guard let url = appURL else { return }
@@ -88,12 +126,12 @@ final class BlipModel: ObservableObject {
   func send(_ urls: [URL]) async -> FileSendResult {
     let files = urls.filter(\.isFileURL)
     guard !files.isEmpty else { return FileSendResult(success: false) }
-    if !running { await start() }
     guard running else {
-      return FileSendResult(success: false, message: String(localized: "Couldn't start Blip."))
+      return FileSendResult(success: false, message: String(localized: "Blip is off. Turn it on first."))
     }
     try? await Task.sleep(nanoseconds: 600_000_000)  // let a freshly started Blip settle
-    return Self.performService(files)
+    let ok = Self.performService(files)
+    return ok
       ? FileSendResult(
         success: true,
         message: String(

@@ -31,11 +31,31 @@ struct SettingsView: View {
     .background {  // ⌘J shows or hides the terminal (the toolbar button does the same)
       Button("") { terminal.isOpen.toggle() }.keyboardShortcut("j", modifiers: .command).opacity(0)
     }
+    .overlay(alignment: .bottomTrailing) { terminalButton }
     .ignoresSafeArea()
     .frame(minWidth: 800, minHeight: 540)
     .onAppear { manager.setVisibleTool(nav.page == "general" ? nil : nav.page) }
     .onChange(of: nav.page) { _, new in manager.setVisibleTool(new == "general" ? nil : new) }
     .onDisappear { manager.setVisibleTool(nil) }
+  }
+
+  /// Matches the window's own corner radius, so the sidebar and the button follow its outline.
+  static let cornerRadius: CGFloat = 18
+
+  // MARK: Terminal button, bottom right (sits above the drawer while it is open)
+
+  private var terminalButton: some View {
+    Button { terminal.isOpen.toggle() } label: {
+      Image(systemName: "terminal").font(.system(size: 17, weight: .medium))
+        .frame(width: 46, height: 46)
+        .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .glass(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous), interactive: true)
+    .help("Show or hide the terminal (⌘J)")
+    .padding(.trailing, 16)
+    .padding(.bottom, terminal.isOpen ? 252 + 16 : 16)
+    .animation(.default, value: terminal.isOpen)
   }
 
   // MARK: Floating glass sidebar, like System Settings on macOS 26
@@ -55,7 +75,7 @@ struct SettingsView: View {
     }
     .padding(10)
     .frame(maxHeight: .infinity, alignment: .top)
-    .glass(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    .glass(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
   }
 
   private func row<I: View>(id: String, title: Text, tint: Color, @ViewBuilder icon: () -> I) -> some View {
@@ -107,7 +127,7 @@ struct SettingsView: View {
 enum Look {
   static func tint(_ id: String) -> Color {
     ["fileshelf": .blue, "systemmonitor": .green, "speedtest": .orange, "devtools": .purple,
-      "audio": .pink, "blip": .indigo][id] ?? .gray
+      "audio": .pink, "blip": .indigo, "apps": .teal][id] ?? .gray
   }
 
   static let blurb: [String: LocalizedStringKey] = [
@@ -116,10 +136,11 @@ enum Look {
     "speedtest": "Measure your internet download and upload speed.",
     "devtools": "Pick colors, measure the screen, and run Docker, MongoDB and PostgreSQL.",
     "audio": "Switch your audio input and output devices.",
+    "apps": "Turn Google Drive, Proton Drive, Wispr Flow and FineTune on or off without opening them.",
   ]
 
   static let optionsTitle: [String: LocalizedStringKey] = [
-    "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Services",
+    "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Services", "apps": "Menu bar icons",
   ]
 
   static func tile<V: View>(_ icon: V, _ color: Color, size: CGFloat) -> some View {
@@ -200,6 +221,11 @@ private struct ToolPage: View {
         } else {
           installControl
         }
+      }
+      if available, manager.isEnabled(descriptor.id), let tool = manager.active[descriptor.id],
+        let settings = tool.makeSettingsView()
+      {
+        settings
       }
       if available, descriptor.brewCask != nil {
         HStack {

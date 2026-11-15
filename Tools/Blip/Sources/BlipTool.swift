@@ -38,9 +38,29 @@ public final class BlipTool: KitbagTool {
     return [
       FileSender(
         id: "blip", title: "Blip", icon: { BlipTool.appIcon(size: 20) },
+        power: model.power,
         send: { await model.send($0) })
     ]
   }
 
   public func makeMenuView() -> AnyView { AnyView(EmptyView()) }
+
+  public func makeSettingsView() -> AnyView? {
+    guard let model else { return nil }
+    return AnyView(BlipSettingsView(model: model))
+  }
+}
+
+struct BlipSettingsView: View {
+  @ObservedObject var model: BlipModel
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Button { AppMenuIcon.openSystemSettings() } label: { Image(systemName: "arrow.up.forward.square") }
+        .buttonStyle(.borderless)
+        .help("Open System Settings ▸ Menu Bar, where macOS allows or blocks menu bar icons")
+      Toggle("Show Blip's own menu bar icon", isOn: Binding(
+        get: { model.iconVisible }, set: { model.iconVisible = $0 }))
+    }
+  }
 }

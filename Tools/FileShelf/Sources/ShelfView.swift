@@ -56,11 +56,10 @@ struct ShelfView: View {
               dash: model.items.isEmpty ? [5, 4] : []))
       )
 
-      // Only while there is something on the shelf to send.
-      if !model.items.isEmpty {
-        ForEach(model.senders) { sender in
-          SenderButton(sender: sender, model: model)
-        }
+      // Each destination app (Blip) shows its on/off switch while it is off or nothing is on the
+      // shelf; once it is on and there is something to send, only "Send with …" is shown.
+      ForEach(model.senders) { sender in
+        SenderSlot(sender: sender, model: model)
       }
 
       if let m = model.message {
@@ -198,8 +197,71 @@ private final class DragNSView: NSView, NSDraggingSource {
   }
 }
 
-/// "Send with X": click to send the whole shelf, or drop files straight onto it.
-private struct SenderButton: View {
+/// One row per destination app (Blip), always the same shape so nothing jumps: icon and name on
+/// the left, the on/off switch on the right, and a "Send" button between them once the app is on
+/// and there is something on the shelf. Files can also be dropped straight onto the row.
+private struct SenderSlot: View {
+  let sender: FileSender
+  @ObservedObject var model: ShelfModel
+
+  var body: some View {
+    if let power = sender.power {
+      SenderRow(sender: sender, model: model, power: power)
+    } else if !model.items.isEmpty {
+      PlainSenderButton(sender: sender, model: model)
+    }
+  }
+}
+
+private struct SenderRow: View {
+  let sender: FileSender
+  @ObservedObject var model: ShelfModel
+  @ObservedObject var power: SenderPower
+
+  private var canSend: Bool { power.isOn && !model.items.isEmpty }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      sender.icon().frame(width: 20, height: 20)
+      VStack(alignment: .leading, spacing: 0) {
+        Text(sender.title).font(.callout.weight(.medium))
+        Text(power.isBusy ? "Working…" : (power.isOn ? "On" : "Off"))
+          .font(.caption2).foregroundStyle(power.isOn ? Color.green : .secondary)
+      }
+      Spacer(minLength: 6)
+      if canSend {
+        Button { model.send(with: sender) } label: {
+          Label("Send", systemImage: "paperplane.fill").font(.callout.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .background(Color.accentColor, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Send the shelf with \(sender.title)")
+      }
+      if power.isBusy { ProgressView().controlSize(.small) }
+      Toggle("\(sender.title) service", isOn: Binding(get: { power.isOn }, set: { power.set($0) }))
+        .labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(power.isBusy)
+    }
+    .padding(.horizontal, 10).padding(.vertical, 7)
+    .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 12).strokeBorder(
+        Color.accentColor, lineWidth: model.targetedSender == sender.id ? 2 : 0)
+    )
+    .dropDestination(for: URL.self) { urls, _ in
+      model.send(with: sender, urls: urls)
+      NotificationCenter.default.post(name: .kitbagFileDropFinished, object: nil)
+      return !urls.isEmpty
+    } isTargeted: {
+      model.targetedSender = $0 ? sender.id : nil
+    }
+    .animation(.default, value: canSend)
+  }
+}
+
+/// "Send with X" for destinations that have no on/off switch.
+private struct PlainSenderButton: View {
   let sender: FileSender
   @ObservedObject var model: ShelfModel
 
@@ -217,7 +279,8 @@ private struct SenderButton: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .card()
+    .padding(.horizontal, 10).padding(.vertical, 7)
+    .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 12).strokeBorder(
         Color.accentColor, lineWidth: model.targetedSender == sender.id ? 2 : 0)

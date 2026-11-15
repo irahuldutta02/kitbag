@@ -75,6 +75,7 @@ final class ShelfModel: ObservableObject {
       }
     }
     save()
+    if !urls.isEmpty, !items.isEmpty { senders.forEach { $0.prepare?() } }
   }
 
   /// Sends the whole shelf, or just `urls` when given. After the whole shelf was sent, it is cleared.
@@ -93,6 +94,7 @@ final class ShelfModel: ObservableObject {
     items.removeAll { $0.id == id }
     missing.remove(id)
     save()
+    if items.isEmpty { senders.forEach { $0.release?() } }
   }
 
   func clear() {
@@ -100,6 +102,7 @@ final class ShelfModel: ObservableObject {
     items.removeAll()
     missing.removeAll()
     save()
+    senders.forEach { $0.release?() }
   }
 
   func shutdown() {

@@ -33,12 +33,15 @@ let package = Package(
     .target(name: "Blip", dependencies: ["KitbagCore"], path: "Tools/Blip/Sources"),
     .testTarget(name: "BlipTests", dependencies: ["Blip"], path: "Tools/Blip/Tests"),
 
+    .target(name: "Apps", dependencies: ["KitbagCore"], path: "Tools/Apps/Sources"),
+    .testTarget(name: "AppsTests", dependencies: ["Apps"], path: "Tools/Apps/Tests"),
+
     .executableTarget(
       name: "Kitbag",
       dependencies: [
         "KitbagCore", "FileShelf", "SystemMonitor", "SpeedTest", "DevTools",
         "Audio",
-        "Blip",
+        "Blip", "Apps",
       ],
       path: "App/Sources"),
   ],

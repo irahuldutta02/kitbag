@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Kitbag in Release and packages release/Kitbag-<version>.dmg.
+# Builds Kitbag in Release and packages release/kitbag_<DD_MM_YYYY__hh_mm_ss_am|pm>.dmg.
 # Env: SIGN_IDENTITY (default "-" = ad-hoc), NOTARIZE=1 + NOTARY_PROFILE (notarytool keychain profile),
 #      ARCHS (default "arm64 x86_64").
 set -euo pipefail
@@ -27,7 +27,8 @@ for tool in swift codesign hdiutil iconutil sips qlmanage /usr/libexec/PlistBudd
   command -v "$tool" >/dev/null || die "missing required tool: $tool"
 done
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST") || die "cannot read version from $PLIST"
-DMG="$RELEASE/$APP-$VERSION.dmg"
+# Every build is named by its timestamp, e.g. kitbag_15_11_2026__01_56_28_pm.dmg
+DMG="$RELEASE/kitbag_$(date +%d_%m_%Y__%I_%M_%S_%p | tr '[:upper:]' '[:lower:]').dmg"
 if [[ "$NOTARIZE" == 1 ]]; then
   [[ "$SIGN_IDENTITY" != "-" && "$SIGN_IDENTITY" != "$LOCAL_ID" ]] || die "NOTARIZE=1 needs SIGN_IDENTITY (a Developer ID Application identity)"
   [[ -n "${NOTARY_PROFILE:-}" ]] || die "NOTARIZE=1 needs NOTARY_PROFILE (see 'xcrun notarytool store-credentials')"

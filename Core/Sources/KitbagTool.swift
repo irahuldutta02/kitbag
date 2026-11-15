@@ -29,6 +29,15 @@ public struct FileSendResult {
   }
 }
 
+/// An on/off switch for the app behind a sender (for example Blip), shown on the shelf.
+@MainActor
+public final class SenderPower: ObservableObject {
+  @Published public var isOn = false
+  @Published public var isBusy = false
+  public let set: @MainActor (Bool) -> Void
+  public init(set: @escaping @MainActor (Bool) -> Void) { self.set = set }
+}
+
 /// "Send these files with X". Lets one tool offer a destination to another without either
 /// knowing about the other.
 public struct FileSender: Identifiable {
@@ -37,11 +46,22 @@ public struct FileSender: Identifiable {
   public let icon: @MainActor () -> AnyView
   /// Sends the files; returns whether it worked and a short status message to show, if any.
   public let send: @MainActor ([URL]) async -> FileSendResult
+  /// Manual on/off switch for the destination app, if it can be switched.
+  public let power: SenderPower?
+  /// Files were dropped on the shelf: get ready (for example start the app).
+  public let prepare: (@MainActor () -> Void)?
+  /// The shelf is empty again: nothing is waiting to be sent.
+  public let release: (@MainActor () -> Void)?
 
   public init(
     id: String, title: String, icon: @escaping @MainActor () -> AnyView,
+    power: SenderPower? = nil, prepare: (@MainActor () -> Void)? = nil,
+    release: (@MainActor () -> Void)? = nil,
     send: @escaping @MainActor ([URL]) async -> FileSendResult
   ) {
+    self.power = power
+    self.prepare = prepare
+    self.release = release
     self.id = id
     self.title = title
     self.icon = icon
@@ -106,7 +126,8 @@ public struct ToolIcon: View {
       if let custom = descriptor.customIcon {
         custom()
       } else {
-        Image(systemName: descriptor.symbol).resizable().scaledToFit().frame(width: 16, height: 16)
+        // Same point size for every symbol (scaling to fit made wide and narrow glyphs differ in size).
+        Image(systemName: descriptor.symbol).font(.system(size: 14, weight: .medium))
       }
     }
     .frame(width: 18, height: 18)

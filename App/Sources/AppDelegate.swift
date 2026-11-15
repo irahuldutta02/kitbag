@@ -152,34 +152,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     return false
   }
 
-  // MARK: Toolbar: one Terminal button at the right
-
-  private static let terminalItem = NSToolbarItem.Identifier("terminal")
+  // MARK: Toolbar: empty; it only gives the taller title bar so the window buttons sit in the sidebar.
+  // The Terminal button floats at the bottom right of the window (see SettingsView).
 
   func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-    [.flexibleSpace, Self.terminalItem]
+    [.flexibleSpace]
   }
 
   func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-    [.flexibleSpace, Self.terminalItem]
+    [.flexibleSpace]
   }
 
   func toolbar(
     _ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
     willBeInsertedIntoToolbar flag: Bool
-  ) -> NSToolbarItem? {
-    guard id == Self.terminalItem else { return nil }
-    let item = NSToolbarItem(itemIdentifier: id)
-    item.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Terminal")
-    item.label = "Terminal"
-    item.toolTip = String(localized: "Show or hide the terminal")
-    item.target = self
-    item.action = #selector(toggleTerminal)
-    item.isBordered = true
-    return item
-  }
-
-  @objc private func toggleTerminal() { TerminalModel.shared.isOpen.toggle() }
+  ) -> NSToolbarItem? { nil }
 
   func windowWillClose(_ notification: Notification) {
     settingsWindow?.contentViewController = nil
