@@ -4,9 +4,32 @@ import KitbagCore
 @MainActor
 final class BlipModel: ObservableObject {
   @Published private(set) var running = false
+  @Published private(set) var busy = false
+  @Published var notice: String?
 
   private var appURL: URL? {
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: BlipTool.bundleID)
+  }
+
+  private var observers: [NSObjectProtocol] = []
+
+  /// Blip starting or quitting (from anywhere) updates the switch immediately.
+  func observe() {
+    guard observers.isEmpty else { return }
+    let ws = NSWorkspace.shared.notificationCenter
+    for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+      observers.append(ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+        let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+        guard id == BlipTool.bundleID else { return }
+        Task { @MainActor in self?.refresh() }
+      })
+    }
+    refresh()
+  }
+
+  func stopObserving() {
+    observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+    observers = []
   }
 
   func refresh() {
@@ -14,19 +37,50 @@ final class BlipModel: ObservableObject {
       .isEmpty
   }
 
+  private func waitUntil(running want: Bool) async {
+    for _ in 0..<25 {  // up to ~5 s
+      refresh()
+      if running == want { return }
+      try? await Task.sleep(nanoseconds: 200_000_000)
+    }
+  }
+
   /// Starts Blip (a menu bar app) without taking focus away from what you're doing.
   func start() async {
     refresh()
-    guard let url = appURL, !running else { return }
+    guard !running else { return }
+    guard let url = appURL else { return notice = String(localized: "Blip isn't installed.") }
+    notice = nil
+    busy = true
+    defer { busy = false }
     let config = NSWorkspace.OpenConfiguration()
     config.activates = false
-    _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: config)
-    refresh()
+    do {
+      _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config)
+    } catch {
+      notice = error.localizedDescription
+    }
+    await waitUntil(running: true)
   }
 
+  func quit() async {
+    busy = true
+    defer { busy = false }
+    let apps = NSRunningApplication.runningApplications(withBundleIdentifier: BlipTool.bundleID)
+    apps.forEach { $0.terminate() }
+    await waitUntil(running: false)
+    if running {  // ignored the polite request
+      apps.forEach { $0.forceTerminate() }
+      await waitUntil(running: false)
+    }
+  }
+
+  /// Brings Blip forward; for a menu bar app this makes it show its window.
   func open() {
-    NSRunningApplication.runningApplications(withBundleIdentifier: BlipTool.bundleID).first?
-      .activate()
+    guard let url = appURL else { return }
+    let config = NSWorkspace.OpenConfiguration()
+    config.activates = true
+    Task { _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: config) }
   }
 
   /// Hands the files to Blip through its "Blip…" Service, so Blip shows its own list of people

@@ -20,7 +20,6 @@ struct ShelfView: View {
             Image(systemName: "tray.and.arrow.down.fill")
               .font(.system(size: 34, weight: .light))
               .foregroundStyle(model.dropTargeted ? Color.accentColor : .secondary)
-              .scaleEffect(model.dropTargeted ? 1.15 : 1)
             Text("Drop files or folders here").font(.callout.weight(.medium))
             Text("They wait here until you drag them out.")
               .font(.caption).foregroundStyle(.secondary)
@@ -56,7 +55,6 @@ struct ShelfView: View {
               lineWidth: model.dropTargeted ? 2 : 1,
               dash: model.items.isEmpty ? [5, 4] : []))
       )
-      .animation(.spring(duration: 0.25), value: model.dropTargeted)
 
       // Only while there is something on the shelf to send.
       if !model.items.isEmpty {
@@ -144,7 +142,6 @@ private struct StackView: View {
         .padding(.horizontal, 7).padding(.vertical, 2)
         .background(Capsule().fill(Color.accentColor))
     }
-    .animation(.spring(duration: 0.45, bounce: 0.35), value: model.items.count)
     .overlay(DragSource(model: model))
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Stack of \(model.items.count) files. Drag to copy or move them out.")

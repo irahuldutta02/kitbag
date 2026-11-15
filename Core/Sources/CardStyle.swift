@@ -1,27 +1,31 @@
 import SwiftUI
 
-/// Liquid Glass where macOS has it, a soft material fill before that.
+/// Liquid Glass where macOS has it, a soft material fill before that. How see-through it is comes
+/// from the "Liquid Glass" slider in Settings.
 private struct GlassBackground<S: InsettableShape>: ViewModifier {
   let shape: S
   let interactive: Bool
+  @ObservedObject private var style = GlassStyle.shared
 
   func body(content: Content) -> some View {
+    let t = style.transparency
     if #available(macOS 26.0, *) {
-      content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+      let glass: Glass = t > 0.7 ? .clear : .regular
+      content
+        .background(Color.black.opacity((1 - t) * 0.4), in: shape)  // darkens toward solid
+        .glassEffect(glass, in: shape)  // static glass: the interactive variant shimmers on hover
     } else {
-      content.background(.quaternary.opacity(0.6), in: shape)
+      content.background(.regularMaterial.opacity(1 - t * 0.7), in: shape)
     }
   }
 }
 
-/// Springy press feedback shared by every tappable control.
+/// Press feedback shared by every tappable control: a quick dim, nothing moves.
 public struct PressableStyle: ButtonStyle {
   public init() {}
   public func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .scaleEffect(configuration.isPressed ? 0.95 : 1)
-      .opacity(configuration.isPressed ? 0.85 : 1)
-      .animation(.spring(duration: 0.25, bounce: 0.4), value: configuration.isPressed)
+      .opacity(configuration.isPressed ? 0.7 : 1)  // plain press feedback, no bounce
   }
 }
 

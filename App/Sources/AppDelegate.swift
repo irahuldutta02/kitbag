@@ -3,7 +3,7 @@ import KitbagCore
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate, NSToolbarDelegate {
   let manager = ToolManager(descriptors: AllTools.descriptors)
   private var statusItem: NSStatusItem!
   private let popover = NSPopover()
@@ -93,8 +93,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     if settingsWindow == nil {
       let w = NSWindow(
         contentViewController: NSHostingController(rootView: SettingsView(manager: manager)))
-      w.title = String(localized: "Kitbag Settings")
-      w.styleMask = [.titled, .closable]
+      w.title = "Kitbag"
+      // Modern macOS look: content runs under a transparent title bar, like System Settings.
+      w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+      w.titlebarAppearsTransparent = true
+      w.titleVisibility = .hidden
+      w.isOpaque = false  // lets the window's frosted backdrop show the desktop
+      w.backgroundColor = .clear
+      w.isMovableByWindowBackground = true
+      // No native full screen: it hides the window buttons. The green button zooms the window instead.
+      w.collectionBehavior.insert(.fullScreenNone)
+      // The SwiftUI toolbar gives the taller title bar, so the window buttons sit inside the sidebar like System Settings.
+      // The toolbar makes the title bar taller (window buttons sit inside the sidebar) and holds the
+      // Terminal button, so the button gets native styling and clicks reach it.
+      let toolbar = NSToolbar(identifier: "KitbagToolbar")
+      toolbar.delegate = self
+      toolbar.displayMode = .iconOnly
+      w.toolbar = toolbar
+      w.toolbarStyle = .unified
+      w.titlebarSeparatorStyle = .none
+      w.setContentSize(NSSize(width: 900, height: 620))
+      w.setFrameAutosaveName("KitbagWindow2")
       w.isReleasedWhenClosed = false
       w.delegate = self
       w.center()
@@ -133,6 +152,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     return false
   }
 
+  // MARK: Toolbar: one Terminal button at the right
+
+  private static let terminalItem = NSToolbarItem.Identifier("terminal")
+
+  func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    [.flexibleSpace, Self.terminalItem]
+  }
+
+  func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    [.flexibleSpace, Self.terminalItem]
+  }
+
+  func toolbar(
+    _ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
+    willBeInsertedIntoToolbar flag: Bool
+  ) -> NSToolbarItem? {
+    guard id == Self.terminalItem else { return nil }
+    let item = NSToolbarItem(itemIdentifier: id)
+    item.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Terminal")
+    item.label = "Terminal"
+    item.toolTip = String(localized: "Show or hide the terminal")
+    item.target = self
+    item.action = #selector(toggleTerminal)
+    item.isBordered = true
+    return item
+  }
+
+  @objc private func toggleTerminal() { TerminalModel.shared.isOpen.toggle() }
+
   func windowWillClose(_ notification: Notification) {
     settingsWindow?.contentViewController = nil
     settingsWindow = nil
@@ -170,7 +218,6 @@ struct PopoverView: View {
   @ObservedObject var manager: ToolManager
   @ObservedObject var state: PopoverState
   @ObservedObject var connectivity: ConnectivityStatus
-  @Namespace private var tabSpace
   let openSettings: () -> Void
 
   private var tabs: [(descriptor: ToolDescriptor, tool: any KitbagTool)] {
@@ -190,19 +237,14 @@ struct PopoverView: View {
             ForEach(tabs, id: \.descriptor.id) { tab in
               let on = tab.descriptor.id == currentID
               Button {
-                withAnimation(.spring(duration: 0.35, bounce: 0.25)) {
-                  state.selected = tab.descriptor.id
-                }
+                state.selected = tab.descriptor.id
               } label: {
                 ToolIcon(tab.descriptor)
                   .font(.system(size: 14, weight: .medium))
                   .foregroundStyle(on ? Color.white : Color.secondary)
                   .frame(width: 40, height: 28)
                   .background {
-                    if on {
-                      Capsule().fill(Color.accentColor)
-                        .matchedGeometryEffect(id: "tab", in: tabSpace)
-                    }
+                    if on { Capsule().fill(Color.accentColor) }
                   }
                   .contentShape(Capsule())
               }
@@ -224,7 +266,6 @@ struct PopoverView: View {
         if let tab = tabs.first(where: { $0.descriptor.id == currentID }) {
           tab.tool.makeMenuView()
             .id(currentID)
-            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
         }
       }
       ForEach(manager.descriptors) { d in
@@ -252,7 +293,6 @@ struct PopoverView: View {
     .padding(14)
     .frame(width: 360)
     .frame(maxHeight: .infinity, alignment: .top)  // never re-center while resizing
-    .animation(.spring(duration: 0.4, bounce: 0.15), value: currentID)
     .onAppear { manager.setVisibleTool(currentID) }
     .onChange(of: currentID) { _, new in manager.setVisibleTool(new) }
   }

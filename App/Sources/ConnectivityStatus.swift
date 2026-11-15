@@ -88,7 +88,7 @@ final class ConnectivityStatus: ObservableObject {
   /// Opens the real macOS dropdown. First click asks for Accessibility access with the guided
   /// walkthrough and continues by itself; if the dropdown can't be opened, opens the Settings pane.
   func open(_ kind: Kind) {
-    Task {
+    Task { [self] in
       switch await MenuExtra.open(
         identifier: kind.menuID, title: kind.title, controlCenterTile: kind.tile)
       {

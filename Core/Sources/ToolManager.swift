@@ -21,7 +21,13 @@ public final class ToolManager: ObservableObject {
   }
 
   public nonisolated static func systemHasApp(_ bundleID: String) -> Bool {
-    NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+    // LaunchServices can still list removed apps, or Homebrew's backup copy in the Caskroom,
+    // so only count a copy that really sits in an Applications folder.
+    guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+      return false
+    }
+    let roots = ["/Applications/", NSHomeDirectory() + "/Applications/", "/System/Applications/"]
+    return roots.contains { url.path.hasPrefix($0) } && FileManager.default.fileExists(atPath: url.path)
   }
 
   /// Tools that need another app are available only while that app is installed.
@@ -38,7 +44,38 @@ public final class ToolManager: ObservableObject {
 
   /// Creates instances for enabled tools only.
   public func bootstrap() {
+    startWatching()
     for d in descriptors where isEnabled(d.id) && isAvailable(d) { activate(d) }
+  }
+
+  private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+  private var dirWatchers: [DispatchSourceFileSystemObject] = []
+
+  /// Keeps the tool list in step with what is installed: on wake, on focus, and whenever an app
+  /// is added to or removed from the Applications folders.
+  private func startWatching() {
+    guard observers.isEmpty else { return }
+    let sync: @Sendable () -> Void = { [weak self] in Task { @MainActor in self?.refreshAvailability() } }
+    let ws = NSWorkspace.shared.notificationCenter
+    observers.append((ws, ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in sync() }))
+    let nc = NotificationCenter.default
+    observers.append((nc, nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in sync() }))
+    for path in ["/Applications", NSHomeDirectory() + "/Applications"] {
+      let fd = open(path, O_EVTONLY)
+      guard fd >= 0 else { continue }
+      let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
+      src.setEventHandler { DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: sync) }  // let the copy finish
+      src.setCancelHandler { close(fd) }
+      src.resume()
+      dirWatchers.append(src)
+    }
+  }
+
+  /// Call after installing an app: activates enabled tools that just became available.
+  public func refreshAvailability() {
+    for d in descriptors where !isAvailable(d) { deactivate(d.id) }  // app was uninstalled
+    bootstrap()
+    objectWillChange.send()
   }
 
   public func setEnabled(_ id: String, _ on: Bool) {

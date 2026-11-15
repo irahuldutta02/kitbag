@@ -40,8 +40,10 @@ mkdir -p "$BUILD" "$RELEASE"
 log "Building $APP $VERSION (Release, $ARCHS)"
 ARCH_FLAGS=()
 for a in $ARCHS; do ARCH_FLAGS+=(--arch "$a"); done
-swift build -c release --scratch-path "$BUILD/swift" "${ARCH_FLAGS[@]}"
-BIN="$(swift build -c release --scratch-path "$BUILD/swift" "${ARCH_FLAGS[@]}" --show-bin-path)/$APP"
+# Drop two harmless toolchain warnings (Command Line Tools lack some Xcode folders; x86_64 notice).
+quiet() { grep -v -E "ld: warning: search path|x86_64 architecture is deprecated" || true; }
+swift build -c release --scratch-path "$BUILD/swift" "${ARCH_FLAGS[@]}" 2> >(quiet >&2)
+BIN="$(swift build -c release --scratch-path "$BUILD/swift" "${ARCH_FLAGS[@]}" --show-bin-path 2> >(quiet >&2))/$APP"
 [[ -f "$BIN" ]] || die "binary not found at $BIN"
 
 log "Preparing app icon from assets/logo (originals are not modified)"
@@ -82,6 +84,11 @@ log "Assembling $APP.app"
 APPDIR="$BUILD/$APP.app"
 mkdir -p "$APPDIR/Contents/MacOS" "$APPDIR/Contents/Resources"
 cp "$BIN" "$APPDIR/Contents/MacOS/$APP"
+# SwiftPM stamps the binary with SDK 14, so macOS draws old-style windows (small traffic lights, no
+# Liquid Glass). Stamp the real SDK version; the minimum macOS stays 14.
+vtool -set-build-version macos 14.0 "$(xcrun --show-sdk-version)" -replace \
+  -output "$BUILD/Kitbag.stamped" "$APPDIR/Contents/MacOS/$APP" && mv "$BUILD/Kitbag.stamped" "$APPDIR/Contents/MacOS/$APP"
+chmod +x "$APPDIR/Contents/MacOS/$APP"
 cp "$PLIST" "$APPDIR/Contents/Info.plist"
 cp "$ICNS" "$APPDIR/Contents/Resources/AppIcon.icns"
 for v in Dark Light; do
@@ -99,23 +106,17 @@ log "Creating DMG"
 STAGE="$BUILD/dmg"
 mkdir -p "$STAGE"
 cp -R "$APPDIR" "$STAGE/"
-if command -v create-dmg >/dev/null; then
-  create-dmg --volname "$APP" --volicon "$ICNS" --window-size 540 360 --icon-size 96 \
-    --icon "$APP.app" 140 170 --app-drop-link 400 170 "$DMG" "$STAGE"
-else
-  echo "create-dmg not found; using hdiutil"
-  ln -s /Applications "$STAGE/Applications"
-  cp "$ICNS" "$STAGE/.VolumeIcon.icns"
-  RW="$BUILD/rw.dmg"
-  MNT="$BUILD/mnt"
-  hdiutil create -volname "$APP" -srcfolder "$STAGE" -fs HFS+ -format UDRW -ov "$RW" >/dev/null
-  mkdir -p "$MNT"
-  hdiutil attach "$RW" -nobrowse -readwrite -mountpoint "$MNT" >/dev/null
-  # Set the "custom icon" Finder flag so the volume shows .VolumeIcon.icns.
-  xattr -wx com.apple.FinderInfo "00 00 00 00 00 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" "$MNT"
-  hdiutil detach "$MNT" >/dev/null
-  hdiutil convert "$RW" -format UDZO -o "$DMG" >/dev/null
-fi
+ln -s /Applications "$STAGE/Applications"
+cp "$ICNS" "$STAGE/.VolumeIcon.icns"
+RW="$BUILD/rw.dmg"
+MNT="$BUILD/mnt"
+hdiutil create -volname "$APP" -srcfolder "$STAGE" -fs HFS+ -format UDRW -ov "$RW" >/dev/null 2>&1
+mkdir -p "$MNT"
+hdiutil attach "$RW" -nobrowse -readwrite -mountpoint "$MNT" >/dev/null 2>&1
+# Set the "custom icon" Finder flag so the volume shows .VolumeIcon.icns.
+xattr -wx com.apple.FinderInfo "00 00 00 00 00 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" "$MNT"
+hdiutil detach "$MNT" >/dev/null 2>&1
+hdiutil convert "$RW" -format UDZO -o "$DMG" >/dev/null 2>&1
 if [[ "$SIGN_IDENTITY" != "-" && "$SIGN_IDENTITY" != "$LOCAL_ID" ]]; then codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"; fi
 
 if [[ "$NOTARIZE" == 1 ]]; then

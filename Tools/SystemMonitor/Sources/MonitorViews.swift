@@ -69,10 +69,7 @@ private struct RingTile: View {
         Circle().trim(from: 0, to: min(max(fraction, 0), 1))
           .stroke(color.gradient, style: StrokeStyle(lineWidth: 7, lineCap: .round))
           .rotationEffect(.degrees(-90))
-          .animation(.smooth(duration: 0.6), value: fraction)
         Text(percent(fraction)).font(.system(.callout, design: .rounded).bold().monospacedDigit())
-          .contentTransition(.numericText())
-          .animation(.smooth, value: fraction)
       }
       .frame(width: 58, height: 58)
       Label(title, systemImage: symbol).font(.caption.bold()).labelStyle(.titleAndIcon)
@@ -80,6 +77,7 @@ private struct RingTile: View {
     }
     .frame(maxWidth: .infinity)
     .card()
+    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     .overlay(alignment: .topTrailing) {
       if action != nil {
         Image(systemName: selected ? "chevron.up" : "chevron.down")

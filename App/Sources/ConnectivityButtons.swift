@@ -10,7 +10,6 @@ struct ConnectivityButtons: View {
       button(.wifi, label: wifiLabel, active: status.wifi == .connected) {
         Image(systemName: status.wifi == .off ? "wifi.slash" : "wifi")
           .resizable().scaledToFit().frame(width: 16, height: 16)
-          .contentTransition(.symbolEffect(.replace))
       }
       button(.bluetooth, label: bluetoothLabel, active: status.bluetooth == .connected) {
         BluetoothGlyph().frame(width: 10, height: 16)
@@ -47,7 +46,6 @@ struct ConnectivityButtons: View {
         .background(Circle().fill(active ? Color.accentColor : Color.clear))
         .glass(Circle(), interactive: true)
         .contentShape(Circle())
-        .animation(.spring(duration: 0.4, bounce: 0.3), value: active)
     }
     .buttonStyle(PressableStyle())
     .help(label)

@@ -67,18 +67,21 @@ public struct ToolDescriptor: Identifiable {
   public let customIcon: (@MainActor () -> AnyView)?
   /// For integrations with another app: its bundle id. The tool is offered only if that app is installed.
   public let requiresApp: String?
+  /// Homebrew cask that installs `requiresApp`; Settings offers it while the app is missing.
+  public let brewCask: String?
   /// False for tools that only add features to other tools and have no tab of their own.
   public let showsTab: Bool
   public let make: @MainActor () -> any KitbagTool
 
   public init(
     id: String, name: LocalizedStringKey, symbol: String, defaultEnabled: Bool = true,
-    customIcon: (@MainActor () -> AnyView)? = nil, requiresApp: String? = nil,
+    customIcon: (@MainActor () -> AnyView)? = nil, requiresApp: String? = nil, brewCask: String? = nil,
     showsTab: Bool = true,
     make: @escaping @MainActor () -> any KitbagTool
   ) {
     self.customIcon = customIcon
     self.requiresApp = requiresApp
+    self.brewCask = brewCask
     self.showsTab = showsTab
     self.id = id
     self.name = name
