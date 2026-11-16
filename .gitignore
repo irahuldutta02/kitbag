@@ -3,10 +3,11 @@
 .AppleDouble
 .LSOverride
 
-# SwiftPM / build output (scripts/build.sh writes to build/ and release/)
+# SwiftPM / build output (scripts/build.sh writes to build/ and release/; release disk images go to GitHub Releases, not git)
 .build/
 .swiftpm/
 /build/
+/release/
 DerivedData/
 *.app
 *.dSYM/
