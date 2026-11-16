@@ -2,21 +2,37 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleExecutable</key><string>Kitbag</string>
-  <key>CFBundleIdentifier</key><string>com.irahuldutta.Kitbag</string>
-  <key>CFBundleName</key><string>Kitbag</string>
-  <key>CFBundleDisplayName</key><string>Kitbag</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>KitbagUpdateRepo</key><string>irahuldutta02/kitbag</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
-  <key>LSUIElement</key><true/>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>Kitbag listens to your voice while you dictate.</string>
-  <key>NSSpeechRecognitionUsageDescription</key><string>Kitbag turns your speech into text for dictation.</string>
-  <key>NSHumanReadableCopyright</key><string>Copyright © Rahul Dutta</string>
+	<key>CFBundleDisplayName</key>
+	<string>Kitbag</string>
+	<key>CFBundleExecutable</key>
+	<string>Kitbag</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.irahuldutta.Kitbag</string>
+	<key>CFBundleName</key>
+	<string>Kitbag</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.1</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>KitbagUpdateRepo</key>
+	<string>irahuldutta02/kitbag</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © Rahul Dutta</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Kitbag listens to your voice while you dictate.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Kitbag turns your speech into text for dictation.</string>
 </dict>
 </plist>
