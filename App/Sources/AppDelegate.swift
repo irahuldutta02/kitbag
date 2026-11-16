@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         self.state.dropMode = false
       }
     }
+    NotificationCenter.default.addObserver(forName: .kitbagCloseMenu, object: nil, queue: .main) {
+      [weak self] _ in
+      MainActor.assumeIsolated { self?.popover.performClose(nil) }
+    }
     popover.behavior = .transient
     popover.delegate = self
 

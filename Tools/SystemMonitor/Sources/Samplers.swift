@@ -29,7 +29,7 @@ struct SystemSampler {
   private var prevTime: Date?
   private var storage: (used: UInt64, total: UInt64) = (0, 0)
   private var ticks = 0
-  private var health: (health: Double, cycles: Int)?
+  private var health: (health: Double, cycles: Int?)?
 
   mutating func sample(now: Date = Date()) -> SystemSnapshot {
     var s = SystemSnapshot()
@@ -148,7 +148,7 @@ struct SystemSampler {
     return result
   }
 
-  static func batteryHealth() -> (health: Double, cycles: Int)? {
+  static func batteryHealth() -> (health: Double, cycles: Int?)? {
     let svc = IOServiceGetMatchingService(
       kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
     guard svc != 0 else { return nil }
@@ -157,16 +157,41 @@ struct SystemSampler {
     guard IORegistryEntryCreateCFProperties(svc, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
       let top = props?.takeRetainedValue() as? [String: Any]
     else { return nil }
-    let d = top["BatteryData"] as? [String: Any] ?? top
-    let cycles = (top["CycleCount"] as? NSNumber)?.intValue ?? 0
-    // Apple Silicon reports Maximum Capacity as a percentage (what System Settings shows).
-    if let pct = (top["MaxCapacity"] as? NSNumber)?.doubleValue, pct <= 100 {
-      return (pct / 100, cycles)
+    // Chip generations (M1...M5) and macOS versions put these keys at the top level, inside
+    // BatteryData, or both, so look through every nested dictionary.
+    func number(_ keys: String...) -> Double? {
+      for key in keys {
+        if let v = findNumber(key, in: top), v > 0 { return v }
+      }
+      return nil
     }
-    guard let design = (d["DesignCapacity"] as? NSNumber)?.doubleValue, design > 0,
-      let now = ((d["NominalChargeCapacity"] ?? d["AppleRawMaxCapacity"]) as? NSNumber)?.doubleValue
-    else { return nil }
-    return (min(now / design, 1), cycles)
+    return computeHealth(
+      design: number("DesignCapacity"),
+      nominal: number("NominalChargeCapacity"),
+      rawMax: number("AppleRawMaxCapacity", "FullChargeCapacity"),
+      maxCapacity: number("MaxCapacity"),
+      cycles: findNumber("CycleCount", in: top).map { Int($0) })
+  }
+
+  /// First numeric value for `key`, checking this dictionary before the ones nested in it.
+  private static func findNumber(_ key: String, in dict: [String: Any]) -> Double? {
+    if let v = (dict[key] as? NSNumber)?.doubleValue { return v }
+    for case let child as [String: Any] in dict.values {
+      if let v = findNumber(key, in: child) { return v }
+    }
+    return nil
+  }
+
+  /// Health = how much charge the battery holds now versus when new, in the same units (mAh).
+  /// The top-level `MaxCapacity` is a 0-100 charge scale on Apple Silicon (always 100), so it only
+  /// counts as a capacity on Intel Macs, where it is in mAh. A missing cycle count stays unknown instead of showing 0.
+  static func computeHealth(
+    design: Double?, nominal: Double?, rawMax: Double?, maxCapacity: Double?, cycles: Int?
+  ) -> (health: Double, cycles: Int?)? {
+    guard let design, design >= 200 else { return nil }  // mAh; a tiny value means another unit
+    let now = nominal ?? rawMax ?? (maxCapacity.flatMap { $0 > 100 ? $0 : nil })
+    guard let now else { return nil }
+    return (min(max(now / design, 0), 1), cycles)
   }
 
   static func battery() -> BatteryInfo? {

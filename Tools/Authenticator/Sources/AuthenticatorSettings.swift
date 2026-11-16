@@ -1,0 +1,63 @@
+import AppKit
+import KitbagCore
+import SwiftUI
+
+/// The Authenticator page in the Kitbag window: options, backup and restore, permissions.
+struct AuthenticatorSettingsView: View {
+  @ObservedObject var model: AuthenticatorModel
+
+  var body: some View {
+    Section("Accounts") {
+      HStack {
+        Text(model.entries.count == 1 ? "1 account" : "\(model.entries.count) accounts")
+        Spacer()
+        Button("Add…") { model.addManually() }.controlSize(.small)
+        Button("Scan QR Code") { model.scanScreen() }.controlSize(.small)
+      }
+      Toggle("Clear a copied code from the clipboard after 30 seconds", isOn: $model.clearAfterCopy)
+      if let e = model.storageError { Text(e).font(.caption).foregroundStyle(.red) }
+    }
+
+    Section {
+      LabeledContent("Last backup") {
+        if let d = model.lastBackup {
+          Text(d, format: .dateTime.day().month().year().hour().minute())
+        } else {
+          Text("Never").foregroundStyle(.orange)
+        }
+      }
+      if model.needsBackup && model.lastBackup != nil {
+        Label("Accounts changed since your last backup.", systemImage: "exclamationmark.circle")
+          .font(.callout).foregroundStyle(.orange)
+      }
+      HStack {
+        Button { model.backUp() } label: { Label("Back Up…", systemImage: "square.and.arrow.up") }
+          .disabled(model.entries.isEmpty)
+        Button { model.restoreBackup() } label: { Label("Restore…", systemImage: "square.and.arrow.down") }
+      }
+    } header: {
+      Text("Backup")
+    } footer: {
+      Text("A backup is a JSON file with all your accounts, including their secrets, so anyone who has it can create your codes. Keep it somewhere private. Restoring adds the accounts you don't have yet and never overwrites existing ones.")
+    }
+
+    Section {
+      LabeledContent("Screen recording") {
+        if CGPreflightScreenCaptureAccess() {
+          Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        } else {
+          Button("Open Settings") { Dialogs.openScreenRecordingSettings() }.controlSize(.small)
+        }
+      }
+    } header: {
+      Text("Permissions")
+    } footer: {
+      Text("Only needed to scan a QR code on your screen. Screenshots are read on this Mac and deleted straight away. Accounts are stored in your Keychain and never leave this Mac.")
+    }
+
+    Section {
+      Button("Remove All Accounts…", role: .destructive) { model.confirmRemoveAll() }
+        .disabled(model.entries.isEmpty)
+    }
+  }
+}

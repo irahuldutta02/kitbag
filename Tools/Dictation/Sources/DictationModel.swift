@@ -27,6 +27,7 @@ final class DictationModel: ObservableObject {
   private let whisper = WhisperCapture()
   private lazy var recorder: any Recorder = appleCapture
   private let overlay = DictationOverlay()
+  private let silencer = Silencer()
   private let hotKey = GlobalHotKey()
   private let escKey = GlobalHotKey()
   private let guide = AccessibilityGuide()
@@ -63,6 +64,7 @@ final class DictationModel: ObservableObject {
 
   func stop() {
     cancel()
+    silencer.restore()
     hotKey.unregister()
     escKey.unregister()
     fnWatcher.stop()
@@ -151,6 +153,7 @@ final class DictationModel: ObservableObject {
     } else if phase == .listening {
       escKey.unregister()
       recorder.cancel()
+      silencer.restore()
       phase = .idle
       overlay.hide()
     }
@@ -181,6 +184,7 @@ final class DictationModel: ObservableObject {
         abortStart = false
         return
       }
+      silencer.silence()  // keep the Mac quiet while listening
       do {
         overlay.state.reset()
         if useWhisper {
@@ -208,6 +212,7 @@ final class DictationModel: ObservableObject {
           finish()
         }
       } catch {
+        silencer.restore()
         flash(error.localizedDescription, error: true)
       }
     }
@@ -222,6 +227,7 @@ final class DictationModel: ObservableObject {
     listeningSince = nil
     Task {
       let raw = await recorder.stop()
+      silencer.restore()  // recording is over: bring the sound back before the slow clean-up
       guard !raw.isEmpty else {
         phase = .idle
         return flash(String(localized: "Didn't catch that"), error: true)
@@ -282,6 +288,7 @@ final class DictationModel: ObservableObject {
     guard phase == .listening else { return }
     escKey.unregister()
     recorder.cancel()
+    silencer.restore()
     phase = .idle
     overlay.hide()
   }

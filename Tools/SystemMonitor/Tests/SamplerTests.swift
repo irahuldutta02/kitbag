@@ -63,3 +63,25 @@ import Testing
     #expect(!SystemMonitorTool().acceptsFileDrops)
   }
 }
+
+@MainActor @Suite struct BatteryHealthTests {
+  @Test func appleSiliconUsesNominalOverDesign() {
+    let r = SystemSampler.computeHealth(design: 4629, nominal: 4465, rawMax: 4338, maxCapacity: 100, cycles: 22)
+    #expect(r?.cycles == 22)
+    #expect(abs((r?.health ?? 0) - 4465.0 / 4629.0) < 0.0001)
+  }
+
+  @Test func intelUsesMaxCapacityInMilliamps() {
+    let r = SystemSampler.computeHealth(design: 6000, nominal: nil, rawMax: nil, maxCapacity: 5100, cycles: 300)
+    #expect(abs((r?.health ?? 0) - 0.85) < 0.0001)
+  }
+
+  @Test func chargeScaleMaxCapacityIsNotHealth() {
+    #expect(SystemSampler.computeHealth(design: 4629, nominal: nil, rawMax: nil, maxCapacity: 100, cycles: 5) == nil)
+  }
+
+  @Test func missingCyclesIsNotZero() {
+    let r = SystemSampler.computeHealth(design: 4629, nominal: 4400, rawMax: nil, maxCapacity: nil, cycles: nil)
+    #expect(r != nil && r?.cycles == nil)
+  }
+}

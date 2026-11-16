@@ -1,6 +1,8 @@
 import Apps
+import Authenticator
 import Audio
 import Blip
+import Clipboard
 import DevTools
 import Dictation
 import FileShelf
@@ -12,6 +14,8 @@ import SystemMonitor
 enum AllTools {
   @MainActor static let descriptors: [ToolDescriptor] = [
     FileShelfTool.descriptor,
+    ClipboardTool.descriptor,
+    AuthenticatorTool.descriptor,
     SystemMonitorTool.descriptor,
     SpeedTestTool.descriptor,
     DevToolsTool.descriptor,

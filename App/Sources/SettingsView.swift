@@ -138,7 +138,7 @@ struct SettingsView: View {
 enum Look {
   static func tint(_ id: String) -> Color {
     ["fileshelf": .blue, "systemmonitor": .green, "speedtest": .orange, "devtools": .purple,
-      "audio": .pink, "blip": .indigo, "apps": .teal, "dictation": .red][id] ?? .gray
+      "audio": .pink, "blip": .indigo, "apps": .teal, "dictation": .red, "clipboard": .cyan, "authenticator": .mint][id] ?? .gray
   }
 
   static let blurb: [String: LocalizedStringKey] = [
@@ -147,15 +147,17 @@ enum Look {
     "speedtest": "Measure your internet download and upload speed.",
     "devtools": "Pick colors, measure the screen, and run Docker, MongoDB and PostgreSQL.",
     "audio": "Switch your audio input and output devices.",
+    "authenticator": "Two-factor codes in your menu bar. Scan a QR code from your screen, click a code to copy it, and keep a backup.",
+    "clipboard": "Remembers what you copy. Press ⌥⌘V (changeable) anywhere to pick an item and paste it.",
     "apps": "Turn Google Drive, Proton Drive, Wispr Flow, OpenWhispr and FineTune on or off without opening them.",
     "dictation": "Hold a key, speak, and your words are transcribed, cleaned up and typed into the app in front of you.",
   ]
 
   /// Tools whose settings view builds its own sections instead of one options section.
-  static let ownSections: Set<String> = ["dictation"]
+  static let ownSections: Set<String> = ["dictation", "authenticator"]
 
   static let optionsTitle: [String: LocalizedStringKey] = [
-    "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Runtimes & Services", "apps": "Apps to show", "dictation": "Dictation",
+    "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Runtimes & Services", "apps": "Apps to show", "dictation": "Dictation", "clipboard": "History",
   ]
 
   static func tile<V: View>(_ icon: V, _ color: Color, size: CGFloat) -> some View {

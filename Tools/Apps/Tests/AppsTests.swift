@@ -6,7 +6,7 @@ import Testing
   @Test func catalogHasUniqueIDs() {
     let ids = AppsModel.catalog.map(\.id)
     #expect(Set(ids).count == ids.count)
-    #expect(ids == ["gdrive", "pdrive", "wispr", "finetune"])
+    #expect(ids == ["gdrive", "pdrive", "wispr", "openwhispr", "finetune"])
   }
 
   @Test func observesOnlyWhileActive() throws {

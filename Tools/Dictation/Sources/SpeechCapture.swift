@@ -19,7 +19,7 @@ final class SpeechCapture {
     func end() { lock.lock(); request?.endAudio(); lock.unlock() }
   }
 
-  private let engine = AVAudioEngine()
+  private let mic = MicSource()
   private let box = RequestBox()
   private var recognizer: SFSpeechRecognizer?
   private var task: SFSpeechRecognitionTask?
@@ -43,19 +43,13 @@ final class SpeechCapture {
     stopping = false
     beginTask()
 
-    let input = engine.inputNode
-    let format = input.outputFormat(forBus: 0)
-    input.installTap(
-      onBus: 0, bufferSize: 1024, format: format,
-      block: Self.makeTap(box: box) { [weak self] level in
-        Task { @MainActor in self?.onLevel?(level) }
-      })
-    engine.prepare()
     do {
-      try engine.start()
+      try mic.start(
+        Self.makeTap(box: box) { [weak self] level in
+          Task { @MainActor in self?.onLevel?(level) }
+        })
       running = true
     } catch {
-      input.removeTap(onBus: 0)
       task?.cancel()
       task = nil
       box.set(nil)
@@ -119,8 +113,7 @@ final class SpeechCapture {
   }
 
   private func teardownAudio() {
-    if engine.isRunning { engine.stop() }
-    engine.inputNode.removeTap(onBus: 0)
+    mic.stop()
   }
 
   private func received(_ text: String?, done: Bool, generation gen: Int) {
@@ -151,8 +144,8 @@ final class SpeechCapture {
   // These run on audio / recognizer threads, so they must not inherit the main actor.
   private nonisolated static func makeTap(
     box: RequestBox, level: @escaping @Sendable (Float) -> Void
-  ) -> AVAudioNodeTapBlock {
-    return { buffer, _ in
+  ) -> @Sendable (AVAudioPCMBuffer) -> Void {
+    return { buffer in
       box.append(buffer)
       guard let data = buffer.floatChannelData?[0] else { return }
       let n = Int(buffer.frameLength)

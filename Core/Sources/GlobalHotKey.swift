@@ -3,16 +3,16 @@ import Foundation
 
 /// A system-wide shortcut (Carbon hot key). Needs no extra permission.
 @MainActor
-final class GlobalHotKey {
+public final class GlobalHotKey {
   private static var nextID: UInt32 = 1
   private static var table: [UInt32: GlobalHotKey] = [:]
   private static var handlerInstalled = false
 
   private let id: UInt32
   private var ref: EventHotKeyRef?
-  var onPress: (() -> Void)?
+  public var onPress: (() -> Void)?
 
-  init() {
+  public init() {
     id = Self.nextID
     Self.nextID += 1
     Self.installHandler()
@@ -20,7 +20,7 @@ final class GlobalHotKey {
 
   /// False if another app already owns this shortcut.
   @discardableResult
-  func register(keyCode: UInt32, modifiers: UInt32) -> Bool {
+  public func register(keyCode: UInt32, modifiers: UInt32) -> Bool {
     unregister()
     var newRef: EventHotKeyRef?
     let hotKeyID = EventHotKeyID(signature: OSType(0x4B54_4247), id: id)
@@ -32,7 +32,7 @@ final class GlobalHotKey {
     return true
   }
 
-  func unregister() {
+  public func unregister() {
     if let ref { UnregisterEventHotKey(ref) }
     ref = nil
     Self.table[id] = nil

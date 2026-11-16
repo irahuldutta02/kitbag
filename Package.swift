@@ -39,12 +39,19 @@ let package = Package(
     .target(name: "Dictation", dependencies: ["KitbagCore"], path: "Tools/Dictation/Sources"),
     .testTarget(name: "DictationTests", dependencies: ["Dictation"], path: "Tools/Dictation/Tests"),
 
+    .target(name: "Clipboard", dependencies: ["KitbagCore"], path: "Tools/Clipboard/Sources"),
+    .testTarget(name: "ClipboardTests", dependencies: ["Clipboard"], path: "Tools/Clipboard/Tests"),
+
+    .target(name: "Authenticator", dependencies: ["KitbagCore"], path: "Tools/Authenticator/Sources"),
+    .testTarget(
+      name: "AuthenticatorTests", dependencies: ["Authenticator"], path: "Tools/Authenticator/Tests"),
+
     .executableTarget(
       name: "Kitbag",
       dependencies: [
         "KitbagCore", "FileShelf", "SystemMonitor", "SpeedTest", "DevTools",
         "Audio",
-        "Blip", "Apps", "Dictation",
+        "Blip", "Apps", "Dictation", "Clipboard", "Authenticator",
       ],
       path: "App/Sources"),
   ],

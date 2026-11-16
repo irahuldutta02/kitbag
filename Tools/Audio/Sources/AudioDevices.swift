@@ -46,6 +46,8 @@ enum CoreAudioDevices {
       guard input || output else { return nil }
       let uid = uid(id)
       guard uid != multiUID else { return nil }  // our own Multi-Output device isn't a choice
+      // Private helper devices that apps (including Kitbag's recorder) create for themselves.
+      guard !uid.hasPrefix("CADefaultDeviceAggregate"), !name(id).hasPrefix("CADefaultDeviceAggregate") else { return nil }
       return AudioDevice(
         id: id, uid: uid, name: name(id), hasInput: input, hasOutput: output,
         transport: transport(id))

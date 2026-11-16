@@ -28,7 +28,7 @@ final class WhisperCapture: Recorder {
   var allowed: [String] = []
   var onLevel: ((Float) -> Void)?
 
-  private let engine = AVAudioEngine()
+  private let mic = MicSource()
   private let sink = WavSink()
   private var wav: URL?
   private var language = "auto"
@@ -43,21 +43,20 @@ final class WhisperCapture: Recorder {
     try sink.open(url)
     wav = url
 
-    let input = engine.inputNode
-    let inFormat = input.outputFormat(forBus: 0)
     guard
       let outFormat = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
-      let converter = AVAudioConverter(from: inFormat, to: outFormat)
-    else { throw WhisperError.notReady }
-    input.installTap(
-      onBus: 0, bufferSize: 4096, format: inFormat,
-      block: Self.makeTap(sink: sink, converter: converter, outFormat: outFormat) { [weak self] level in
-        Task { @MainActor in self?.onLevel?(level) }
-      })
-    engine.prepare()
-    do { try engine.start() } catch {
-      input.removeTap(onBus: 0)
+        commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
+    else {
+      cleanup()
+      throw WhisperError.notReady
+    }
+    do {
+      try mic.start(
+        Self.makeTap(sink: sink, outFormat: outFormat) { [weak self] level in
+          Task { @MainActor in self?.onLevel?(level) }
+        })
+    } catch {
+      sink.close()
       cleanup()
       throw error
     }
@@ -95,8 +94,7 @@ final class WhisperCapture: Recorder {
   }
 
   private func teardown() {
-    if engine.isRunning { engine.stop() }
-    engine.inputNode.removeTap(onBus: 0)
+    mic.stop()
   }
 
   private func cleanup() {
@@ -126,12 +124,14 @@ final class WhisperCapture: Recorder {
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  // Runs on the audio thread, so it must not inherit the main actor.
+  /// Converts whatever the microphone delivers to 16 kHz mono and writes it out.
+  /// Runs on the capture queue, so it must not inherit the main actor.
   private nonisolated static func makeTap(
-    sink: WavSink, converter: AVAudioConverter, outFormat: AVAudioFormat,
-    level: @escaping @Sendable (Float) -> Void
-  ) -> AVAudioNodeTapBlock {
-    return { buffer, _ in
+    sink: WavSink, outFormat: AVAudioFormat, level: @escaping @Sendable (Float) -> Void
+  ) -> @Sendable (AVAudioPCMBuffer) -> Void {
+    let state = ConverterState()
+    return { buffer in
+      guard let converter = state.converter(from: buffer.format, to: outFormat) else { return }
       let ratio = outFormat.sampleRate / buffer.format.sampleRate
       let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
       guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
@@ -153,6 +153,16 @@ final class WhisperCapture: Recorder {
       for i in 0..<n { sum += data[i] * data[i] }
       level(min(1, (sum / Float(n)).squareRoot() * 14))
     }
+  }
+}
+
+/// Builds the sample-rate converter once the first buffer shows what the microphone really sends.
+private final class ConverterState: @unchecked Sendable {
+  private var cached: AVAudioConverter?
+  func converter(from input: AVAudioFormat, to output: AVAudioFormat) -> AVAudioConverter? {
+    if let cached, cached.inputFormat == input { return cached }
+    cached = AVAudioConverter(from: input, to: output)
+    return cached
   }
 }
 

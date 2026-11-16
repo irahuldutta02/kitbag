@@ -28,7 +28,8 @@ final class AppsModel: ObservableObject {
   @Published private(set) var hidden: Set<String> = Set(
     UserDefaults.standard.stringArray(forKey: "kitbag.apps.hidden") ?? [])
 
-  var visible: [ManagedApp] { Self.catalog.filter { !hidden.contains($0.id) } }
+  /// Only apps that are installed and not hidden; anything missing is listed in Settings instead.
+  var visible: [ManagedApp] { Self.catalog.filter { installed.contains($0.id) && !hidden.contains($0.id) } }
 
   func setShown(_ app: ManagedApp, _ on: Bool) {
     if on { hidden.remove(app.id) } else { hidden.insert(app.id) }

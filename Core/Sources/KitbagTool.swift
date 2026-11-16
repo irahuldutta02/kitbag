@@ -142,6 +142,9 @@ public struct ToolDescriptor: Identifiable {
 extension Notification.Name {
   /// Posted by a tool when a file drag ended over it (dropped or left), so the menu can show all tabs again.
   public static let kitbagFileDropFinished = Notification.Name("kitbag.fileDropFinished")
+  /// Posted by a tool that is about to open its own window or take a screenshot, so the menu
+  /// pop-up gets out of the way first.
+  public static let kitbagCloseMenu = Notification.Name("kitbag.closeMenu")
 }
 
 /// The tool's icon: its custom glyph if it has one, otherwise its SF Symbol. Every icon is fitted

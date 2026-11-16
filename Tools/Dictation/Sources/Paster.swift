@@ -12,6 +12,8 @@ enum Paster {
     }
     pb.clearContents()
     pb.setString(text, forType: .string)
+    // Marks this as a passing copy, so clipboard histories (Kitbag's own included) don't keep it.
+    pb.setString("", forType: .init("org.nspasteboard.TransientType"))
     let ours = pb.changeCount
     guard AXIsProcessTrusted() else { return false }
 

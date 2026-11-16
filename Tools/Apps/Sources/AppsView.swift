@@ -7,7 +7,7 @@ struct AppsView: View {
   var body: some View {
     VStack(spacing: 10) {
       if model.visible.isEmpty && model.toolSwitches.isEmpty {
-        Text("No apps selected. Choose some in Settings ▸ Apps.")
+        Text("No apps to show. Install or choose some in Settings ▸ Apps.")
           .font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 16).card()
       } else {
         VStack(spacing: 0) {
@@ -83,7 +83,7 @@ struct AppsSettingsView: View {
               .opacity(installed ? 1 : 0.4)
             VStack(alignment: .leading, spacing: 1) {
               Text("Show \(app.name)")
-              if !installed { Text("Not installed").font(.caption).foregroundStyle(.secondary) }
+              if !installed { Text("Not installed, so it's left out of the menu").font(.caption).foregroundStyle(.secondary) }
             }
           }
         }
