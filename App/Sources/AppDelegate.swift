@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     manager.bootstrap()
+    Updater.shared.start()
     // After a drop (or a drag that left), show every tab again, staying on the shelf.
     NotificationCenter.default.addObserver(
       forName: .kitbagFileDropFinished, object: nil, queue: .main
@@ -219,6 +220,7 @@ final class PopoverState: ObservableObject {
 
 struct PopoverView: View {
   @ObservedObject var manager: ToolManager
+  @ObservedObject private var updater = Updater.shared
   @ObservedObject var state: PopoverState
   @ObservedObject var connectivity: ConnectivityStatus
   let openSettings: () -> Void
@@ -234,6 +236,7 @@ struct PopoverView: View {
 
   var body: some View {
     VStack(spacing: 12) {
+      if updater.bannerVisible { UpdateBanner() }  // not even a gap when there is nothing to show
       HStack(alignment: .center) {
         if !tabs.isEmpty {
           HStack(spacing: 4) {

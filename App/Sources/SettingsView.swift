@@ -112,6 +112,7 @@ struct SettingsView: View {
         } else if nav.page == "general" {
           AppearanceSection()
           LoginItemSection()
+          UpdatesSection()
         } else if let d = tools.first(where: { $0.id == nav.page }) {
           ToolPage(descriptor: d, manager: manager)
           // Add-ons without a tab of their own (Blip) live on the File Shelf page.

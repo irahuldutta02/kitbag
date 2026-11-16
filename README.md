@@ -27,4 +27,7 @@ A native macOS menu bar app (SwiftUI + AppKit, macOS 14+) with small tools you c
   - 🟢 Node.js (nvm) and 🐍 Python (pyenv) versions
 - 🚀 **Apps** – start or quit Google Drive, Proton Drive, Wispr Flow and FineTune
 - 📡 **Blip** – send shelf files with one click
+- 🔄 **Updates** – Kitbag checks GitHub for a newer release about once a day and can install it for you
+  - ✅ Every download is checked (SHA-256, and the signature must match the app you are running) and the old app is restored if the new one doesn't start
+  - 🚀 Publish a release with `scripts/release.sh patch|minor|major` (see the header of that script)
 - 📶 **Wi-Fi and Bluetooth buttons** – status and quick dropdowns
