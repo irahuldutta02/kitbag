@@ -87,6 +87,14 @@ struct AppsSettingsView: View {
             }
           }
         }
+        if installed && app.background {
+          Toggle(
+            "Keep window hidden",
+            isOn: Binding(get: { !model.windowAllowed.contains(app.id) }, set: { model.setWindowAllowed(app, !$0) })
+          )
+          .toggleStyle(.checkbox).controlSize(.small)
+          .help("When on, \(app.name) runs in the background and its window is put away whenever it pops up, for example when you press the dictation key. Needs Accessibility access for Kitbag.")
+        }
         if installed {
           Button("Menu bar icon…") { AppMenuIcon.openSystemSettings() }.controlSize(.small)
             .help("Manage \(app.name)'s menu bar icon in System Settings")

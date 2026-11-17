@@ -102,6 +102,23 @@ final class EntryForm: ObservableObject {
     }
   }
 
+  func scanCamera() {
+    guard !model.scanning else { return }
+    model.scanning = true
+    EntryEditor.hide()
+    Task {
+      let outcome = await CameraScanner.scan()
+      model.scanning = false
+      EntryEditor.reveal()
+      switch outcome {
+      case .cancelled: break
+      case .found(let m): fill(from: m)
+      case .none: model.noCodeFound(fromScreen: false)
+      case .failed(let why): message = why
+      }
+    }
+  }
+
   func scanImage() {
     let p = NSOpenPanel()
     p.title = "Choose a picture of a QR code"
@@ -178,12 +195,13 @@ struct EntryFormView: View {
               Button { form.scanScreen() } label: {
                 Label("Scan QR Code on Screen", systemImage: "viewfinder")
               }
+              Button { form.scanCamera() } label: { Label("Use Camera", systemImage: "camera") }
               Button { form.scanImage() } label: { Label("From Image…", systemImage: "photo") }
               Spacer()
             }
             .controlSize(.regular)
           } footer: {
-            Text("Drag over a QR code on your screen and the fields below are filled in for you.")
+            Text("Drag over a QR code on your screen, or hold it up to the camera, and the fields below are filled in for you.")
           }
         }
         Section {

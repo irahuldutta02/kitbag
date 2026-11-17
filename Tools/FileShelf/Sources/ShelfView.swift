@@ -349,7 +349,7 @@ private struct ConvertRow: View {
     VStack(alignment: .leading, spacing: 10) {
       Label("Convert to", systemImage: "arrow.triangle.2.circlepath")
         .font(.callout.weight(.semibold)).lineLimit(1)
-      HStack(spacing: 6) {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 58), spacing: 6)], spacing: 6) {
         ForEach(model.convertFormats) { f in
           Button { model.requestConvert(.format(f)) } label: {
             Text(f.label).font(.callout.weight(.semibold))
@@ -394,7 +394,7 @@ private struct ConvertRow: View {
   private func confirm(_ request: ConvertRequest) -> some View {
     let plan = model.plan(for: request)
     let sameFormat = request == .compress || request == .cleanOnly
-    let compressing = model.compressEnabled && request != .mergePDF
+    let compressing = model.compressEnabled && showsCompress(request)
     let nothingToDo = sameFormat && !model.compressEnabled && !model.cleanEnabled
     return VStack(alignment: .leading, spacing: 10) {
       HStack {
@@ -403,7 +403,7 @@ private struct ConvertRow: View {
         Button("Cancel") { model.cancelRequest() }.controlSize(.small).buttonStyle(.borderless)
       }
       SizeComparison(rows: model.estimateRows, estimating: model.estimating)
-      if request != .mergePDF {
+      if showsCompress(request) {
         Toggle("Compress", isOn: $model.compressEnabled).toggleStyle(.checkbox).font(.callout)
         if compressing {
           Picker("Strength", selection: $model.compressLevel) {
@@ -431,6 +431,12 @@ private struct ConvertRow: View {
       .disabled(nothingToDo)
       .opacity(nothingToDo ? 0.5 : 1)
     }
+  }
+
+  /// Compressing only means something for images and PDFs.
+  private func showsCompress(_ r: ConvertRequest) -> Bool {
+    if case .format(let f) = r { return f.supportsCompress }
+    return r != .mergePDF
   }
 
   private func progress(_ p: ConvertProgress) -> some View {

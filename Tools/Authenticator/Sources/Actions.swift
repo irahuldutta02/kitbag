@@ -64,7 +64,7 @@ extension AuthenticatorModel {
   // MARK: Scanning
 
   /// Snip a QR code from the screen.
-  func scanScreen() {
+  func scanScreen(forImport: Bool = false) {
     guard !scanning else { return }
     scanning = true
     NotificationCenter.default.post(name: .kitbagCloseMenu, object: nil)  // keep the pop-up out of the picture
@@ -74,14 +74,34 @@ extension AuthenticatorModel {
       scanning = false
       switch outcome {
       case .cancelled: break
-      case .found(let messages): handleScanned(messages)
+      case .found(let messages): handleScanned(messages, forImport: forImport)
       case .none: noCodeFound()
       case .failed(let why): Dialogs.show("Couldn't take the screenshot", why)
       }
     }
   }
 
-  func scanImageFile() {
+  /// Hold a QR code up to the camera.
+  func scanCamera(forImport: Bool = false) {
+    guard !scanning else { return }
+    scanning = true
+    NotificationCenter.default.post(name: .kitbagCloseMenu, object: nil)
+    Task {
+      let outcome = await CameraScanner.scan()
+      scanning = false
+      switch outcome {
+      case .cancelled: break
+      case .found(let messages): handleScanned(messages, forImport: forImport)
+      case .none: noCodeFound(fromScreen: false)
+      case .failed(let why):
+        if Dialogs.show("Couldn't use the camera", why, second: CameraScanner.cameraDenied ? "Open Settings" : nil) {
+          CameraScanner.openCameraSettings()
+        }
+      }
+    }
+  }
+
+  func scanImageFile(forImport: Bool = false) {
     let p = NSOpenPanel()
     p.title = "Choose a picture of a QR code"
     p.allowedContentTypes = [.image]
@@ -91,32 +111,32 @@ extension AuthenticatorModel {
     NSApp.activate(ignoringOtherApps: true)
     guard p.runModal() == .OK, let url = p.url else { return }
     let found = QRScanner.messages(inFile: url)
-    found.isEmpty ? noCodeFound(fromScreen: false) : handleScanned(found)
+    found.isEmpty ? noCodeFound(fromScreen: false) : handleScanned(found, forImport: forImport)
   }
 
   /// A copied `otpauth://` link, or a copied picture of a QR code.
-  func pasteFromClipboard() {
+  func pasteFromClipboard(forImport: Bool = false) {
     let pb = NSPasteboard.general
     var found = (pb.string(forType: .string).map { [$0] } ?? [])
     if found.flatMap(OTPImport.parse).isEmpty { found = QRScanner.messages(inPasteboard: pb) }
     if found.flatMap(OTPImport.parse).isEmpty {
       Dialogs.show("Nothing to paste", "Copy an otpauth:// link or a picture of a QR code first, then try again.")
     } else {
-      handleScanned(found)
+      handleScanned(found, forImport: forImport)
     }
   }
 
-  func handleScanned(_ messages: [String]) {
+  func handleScanned(_ messages: [String], forImport: Bool = false) {
     let found = messages.flatMap(OTPImport.parse)
     switch found.count {
     case 0:
       Dialogs.show(
         "That isn't an authenticator code",
         "The QR code was read, but it isn't a code for an authenticator account (it should start with otpauth://).")
-    case 1:
+    case 1 where !forImport:
       EntryEditor.show(model: self, editing: nil, draft: found[0])  // let the person check the name first
     default:
-      summarize(importEntries(found), what: "from the QR code")
+      summarize(importEntries(found), what: forImport ? "from Google Authenticator" : "from the QR code")
     }
   }
 

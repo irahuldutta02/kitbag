@@ -366,7 +366,7 @@ extension ShelfModel {
           if f.isImage && kind == .image { plan.hasMetadata = true }
         } else if kind == .other { plan.unsupported += 1 } else { plan.alreadyThatFormat += 1 }
       case .mergePDF:
-        if kind == .other { plan.unsupported += 1 } else { plan.convert += 1 }
+        if Converter.isMergeable(url) { plan.convert += 1 } else { plan.unsupported += 1 }
       case .compress, .cleanOnly:
         if Converter.sameFormat(of: url) != nil {
           plan.convert += 1
@@ -395,7 +395,12 @@ extension ShelfModel {
   }
 
   nonisolated static func fileSize(_ url: URL) -> Int64 {
-    Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+    guard values?.isDirectory == true else { return Int64(values?.fileSize ?? 0) }
+    // A folder is the sum of what is inside it.
+    let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey])
+    return files?.compactMap { ($0 as? URL).flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } }
+      .reduce(0) { $0 + Int64($1) } ?? 0
   }
 
   /// Which files a request applies to.
@@ -403,7 +408,7 @@ extension ShelfModel {
     shelfFiles.filter { f in
       switch request {
       case .format(let fmt): return Converter.canConvert(f.url, to: fmt)
-      case .mergePDF: return Converter.kind(of: f.url) != .other
+      case .mergePDF: return Converter.isMergeable(f.url)
       case .compress, .cleanOnly: return Converter.sameFormat(of: f.url) != nil
       }
     }

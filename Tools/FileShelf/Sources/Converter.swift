@@ -9,6 +9,9 @@ import UniformTypeIdentifiers
 /// A format the shelf can convert to.
 enum ConvertFormat: String, CaseIterable, Identifiable {
   case png, jpeg, heic, tiff, pdf
+  case txt, rtf, html, docx
+  case m4a, wav, aiff, mp4, mov
+  case zip
 
   var id: String { rawValue }
   var type: UTType {
@@ -18,6 +21,16 @@ enum ConvertFormat: String, CaseIterable, Identifiable {
     case .heic: return .heic
     case .tiff: return .tiff
     case .pdf: return .pdf
+    case .txt: return .plainText
+    case .rtf: return .rtf
+    case .html: return .html
+    case .docx: return Converter.docxType
+    case .m4a: return .mpeg4Audio
+    case .wav: return .wav
+    case .aiff: return .aiff
+    case .mp4: return .mpeg4Movie
+    case .mov: return .quickTimeMovie
+    case .zip: return .zip
     }
   }
   var ext: String { self == .jpeg ? "jpg" : rawValue }
@@ -25,11 +38,17 @@ enum ConvertFormat: String, CaseIterable, Identifiable {
   /// JPEG has no transparency: see-through areas are flattened onto white.
   var supportsAlpha: Bool { self != .jpeg }
   var isLossy: Bool { self == .jpeg || self == .heic }
-  var isImage: Bool { self != .pdf }
+  var isImage: Bool { [.png, .jpeg, .heic, .tiff].contains(self) }
+  /// Whether the Compress option means anything for this target.
+  var supportsCompress: Bool { isImage || self == .pdf }
+  var isDocument: Bool { [.txt, .rtf, .html, .docx].contains(self) }
+  var isAudio: Bool { [.m4a, .wav, .aiff].contains(self) }
+  var isVideo: Bool { self == .mp4 || self == .mov }
 
   /// False where this Mac has no encoder (for example HEIC on very old systems).
   var canWrite: Bool {
-    self == .pdf || (CGImageDestinationCopyTypeIdentifiers() as? [String])?.contains(type.identifier) == true
+    guard isImage else { return true }
+    return (CGImageDestinationCopyTypeIdentifiers() as? [String])?.contains(type.identifier) == true
   }
 }
 
@@ -76,7 +95,15 @@ struct ConvertOptions {
 
 /// Converts images and PDFs. Pure functions of files in and files out, with no UI or shelf state.
 enum Converter {
-  enum Kind { case image, pdf, other }
+  /// `other` is anything with no format of its own to convert to (folders, apps, archives, unknown
+  /// types): those can still be zipped.
+  enum Kind { case image, pdf, document, audio, video, other }
+
+  static let docxType = UTType("org.openxmlformats.wordprocessingml.document") ?? .data
+  private static let documentTypes: [UTType] = [
+    .text, .rtf, .html, .webArchive, docxType,
+    UTType("com.microsoft.word.doc"), UTType("org.oasis-open.opendocument.text"),
+  ].compactMap { $0 }
 
   static func kind(of url: URL) -> Kind {
     let values = try? url.resourceValues(forKeys: [.contentTypeKey, .isDirectoryKey])
@@ -84,22 +111,27 @@ enum Converter {
     let type = values?.contentType ?? UTType(filenameExtension: url.pathExtension)
     guard let type else { return .other }
     if type.conforms(to: .pdf) { return .pdf }
-    if type.conforms(to: .svg) { return .other }  // vector art: ImageIO can't rasterize it
-    if type.conforms(to: .image) { return .image }
+    if type.conforms(to: .image) { return .image }  // SVG included: it is drawn by AppKit
+    if type.conforms(to: .audio) { return .audio }
+    if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
+    if documentTypes.contains(where: { type.conforms(to: $0) }) { return .document }
     return .other
   }
 
-  /// Whether `url` is worth converting to `format`: it must be an image or PDF in a different format.
+  /// Whether `url` is worth converting to `format`: a different format that this kind of file can become.
   static func canConvert(_ url: URL, to format: ConvertFormat) -> Bool {
-    switch kind(of: url) {
-    case .image:
-      if format == .pdf { return true }
-      return !sameType(url, format)
-    case .pdf:
-      return format.isImage  // PDF to PDF is pointless
-    case .other:
-      return false
+    if format == .zip { return !sameType(url, format) }  // anything can be zipped
+    let k = kind(of: url)
+    let reachable: Bool
+    switch k {
+    case .image: reachable = format.isImage || format == .pdf
+    case .pdf: reachable = format.isImage || format == .txt
+    case .document: reachable = format.isDocument || format == .pdf
+    case .audio: reachable = format.isAudio
+    case .video: reachable = format.isVideo || format.isAudio
+    case .other: reachable = false
     }
+    return reachable && (k == .pdf || !sameType(url, format))
   }
 
   private static func sameType(_ url: URL, _ format: ConvertFormat) -> Bool {
@@ -113,7 +145,8 @@ enum Converter {
     ConvertFormat.allCases.filter { f in f.canWrite && urls.contains { canConvert($0, to: f) } }
   }
 
-  static func mergeable(_ urls: [URL]) -> [URL] { urls.filter { kind(of: $0) != .other } }
+  static func isMergeable(_ url: URL) -> Bool { [.image, .pdf].contains(kind(of: url)) }
+  static func mergeable(_ urls: [URL]) -> [URL] { urls.filter(isMergeable) }
 
   // MARK: Converting
 
@@ -133,6 +166,7 @@ enum Converter {
     let quality = options.effectiveQuality
     let stripMetadata = options.stripMetadata
     let base = url.deletingPathExtension().lastPathComponent
+    if format == .zip { return [try zipItem(url, into: dir)] }
     switch kind(of: url) {
     case .image:
       if format == .pdf {
@@ -150,6 +184,11 @@ enum Converter {
       guard let doc = PDFDocument(url: url) else { throw ConvertError.unreadable }
       if doc.isLocked { throw ConvertError.locked }
       guard doc.pageCount > 0 else { throw ConvertError.empty }
+      if format == .txt {
+        let text = doc.string ?? ""
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ConvertError.empty }
+        return [try writeText(text, base: base, into: dir)]
+      }
       var outs: [URL] = []
       // Many pages go into their own folder, so they don't flood the destination.
       var target = dir
@@ -165,8 +204,9 @@ enum Converter {
         outs.append(out)
       }
       return outs
-    case .other:
-      throw ConvertError.unreadable
+    case .document: return [try convertDocument(url, to: format, into: dir)]
+    case .audio, .video: return [try convertMedia(url, to: format, into: dir)]
+    case .other: throw ConvertError.unreadable
     }
   }
 
@@ -183,7 +223,7 @@ enum Converter {
           guard let src = PDFDocument(url: url) else { throw ConvertError.unreadable }
           if src.isLocked { throw ConvertError.locked }
           for i in 0..<src.pageCount { if let p = src.page(at: i)?.copy() as? PDFPage { doc.insert(p, at: doc.pageCount) } }
-        case .other: continue
+        default: continue
         }
       } catch { skipped.append(url.lastPathComponent) }
     }
@@ -198,7 +238,7 @@ enum Converter {
     switch kind(of: url) {
     case .pdf: return .pdf
     case .image: return [ConvertFormat.png, .jpeg, .heic, .tiff].first { $0.canWrite && sameType(url, $0) }
-    case .other: return nil
+    default: return nil
     }
   }
 
@@ -303,9 +343,9 @@ enum Converter {
   }
 
   /// The image with its rotation applied, at full size.
-  private static func loadImage(_ url: URL, maxSide: Int? = nil) throws -> CGImage {
+  static func loadImage(_ url: URL, maxSide: Int? = nil) throws -> CGImage {
     guard let src = CGImageSourceCreateWithURL(url as CFURL, nil), CGImageSourceGetCount(src) > 0 else {
-      throw ConvertError.unreadable
+      return try rasterizeVector(url, maxSide: maxSide)  // SVG and other drawn-by-AppKit images
     }
     let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
     let w = props?[kCGImagePropertyPixelWidth] as? Int ?? 0
@@ -386,7 +426,7 @@ enum Converter {
     doc.insert(page, at: doc.pageCount)
   }
 
-  private static func write(_ doc: PDFDocument, base: String, into dir: URL) throws -> URL {
+  static func write(_ doc: PDFDocument, base: String, into dir: URL) throws -> URL {
     let out = unique(dir, base, "pdf")
     guard doc.write(to: out) else {
       throw ConvertError.writeFailed(String(localized: "disk full or folder not writable"))

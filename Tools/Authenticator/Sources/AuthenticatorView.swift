@@ -71,7 +71,7 @@ struct AuthenticatorView: View {
               }
             }
           }
-          .frame(height: min(CGFloat(list.count) * 106 + (ui.expanded == nil ? 0 : 40), 350))
+          .frame(height: min(CGFloat(list.count) * 106 + (ui.expanded == nil ? 0 : 74), 350))
         }
       }
       if !model.entries.isEmpty {
@@ -95,6 +95,7 @@ private struct AddChoices: View {
   var body: some View {
     VStack(spacing: 2) {
       choice("Scan QR Code on Screen", "viewfinder", "Drag over a code on your screen") { model.scanScreen() }
+      choice("Scan QR Code with Camera", "camera", "Hold a code up to your Mac's camera") { model.scanCamera() }
       choice("Scan QR Code from Image…", "photo", nil) { model.scanImageFile() }
       choice("Paste Link or QR from Clipboard", "doc.on.clipboard", nil) { model.pasteFromClipboard() }
       choice("Enter Manually…", "keyboard", nil) { model.addManually() }
@@ -192,17 +193,21 @@ private struct EntryRow: View {
           CountdownRing(remaining: remaining, period: entry.period)
         }
       }
-      // Clicking the card copies the current code. The click target sits behind the content, so the
-      // ⋯ button on top always gets its own clicks.
-      .background {
-        Color.clear.contentShape(Rectangle()).onTapGesture { model.copyCode(entry, at: date) }
-      }
+      // Clicking anywhere on the card, the code itself included, copies the current code. The ⋯ button
+      // is a real button, so it keeps its own clicks.
+      .contentShape(Rectangle())
+      .onTapGesture { model.copyCode(entry, at: date) }
       if open {
-        HStack(spacing: 6) {
-          action("Copy Next", "forward.end", prominent: true) { model.copyNextCode(entry, at: date); close() }
-          action(entry.pinned ? "Unpin" : "Pin", entry.pinned ? "pin.slash" : "pin") { model.togglePin(entry.id); close() }
-          action("Edit", "pencil") { close(); model.edit(entry) }
-          action("Remove", "trash", destructive: true) { close(); model.confirmDelete(entry) }
+        VStack(spacing: 6) {
+          HStack(spacing: 6) {
+            action("Copy Next", "forward.end", prominent: true) { model.copyNextCode(entry, at: date); close() }
+            action("Scanner", "qrcode") { close(); model.showQRCode(entry) }
+            action(entry.pinned ? "Unpin" : "Pin", entry.pinned ? "pin.slash" : "pin") { model.togglePin(entry.id); close() }
+          }
+          HStack(spacing: 6) {
+            action("Edit", "pencil") { close(); model.edit(entry) }
+            action("Remove", "trash", destructive: true) { close(); model.confirmDelete(entry) }
+          }
         }
         .transition(.opacity)
       }

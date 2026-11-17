@@ -116,8 +116,9 @@ import Testing
     try "x".write(to: t, atomically: true, encoding: .utf8)
     #expect(!Converter.formats(for: [p]).contains(.png))  // already a PNG
     #expect(Converter.formats(for: [p]).contains(.jpeg))
-    #expect(Converter.formats(for: [t]).isEmpty)
-    #expect(Converter.formats(for: [d]).isEmpty)  // folders are never converted
+    #expect(Converter.formats(for: [t]).contains(.pdf))  // text can become PDF, RTF, DOCX…
+    #expect(!Converter.formats(for: [t]).contains(.txt))
+    #expect(Converter.formats(for: [d]) == [.zip])  // folders can only be zipped
   }
 
   @Test func convertsWithoutOverwriting() throws {
@@ -146,12 +147,49 @@ import Testing
 }
 
 @Suite struct ConverterEdgeCaseTests {
-  @Test func svgAndFoldersAreNotConvertible() throws {
+  @Test func everyKindOfFileOffersSomething() throws {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    let weird = d.appendingPathComponent("blob.xyzzy")
+    try "x".write(to: weird, atomically: true, encoding: .utf8)
+    #expect(Converter.formats(for: [weird]) == [.zip])
+    let out = try Converter.convert(weird, to: .zip, quality: 1, into: d)
+    #expect(out[0].lastPathComponent == "blob.zip")
+    #expect(FileManager.default.fileExists(atPath: out[0].path))
+    #expect(Converter.formats(for: [out[0]]).isEmpty)  // a zip is not zipped again
+  }
+
+  @Test func textBecomesRTFDocxAndPDF() throws {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    let t = d.appendingPathComponent("n.txt")
+    try "hello world".write(to: t, atomically: true, encoding: .utf8)
+    for f in [ConvertFormat.rtf, .docx, .pdf, .html] {
+      let out = try Converter.convert(t, to: f, quality: 1, into: d)
+      #expect(out[0].pathExtension == f.ext)
+      #expect(((try? out[0].resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0)
+    }
+    let rtf = d.appendingPathComponent("n.rtf")
+    let back = try Converter.convert(rtf, to: .txt, quality: 1, into: d)
+    #expect(try String(contentsOf: back[0], encoding: .utf8).contains("hello world"))
+  }
+
+  @Test func svgIsAnImage() throws {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    let svg = d.appendingPathComponent("v.svg")
+    try "<svg xmlns='http://www.w3.org/2000/svg' width='40' height='20'><rect width='40' height='20' fill='red'/></svg>"
+      .write(to: svg, atomically: true, encoding: .utf8)
+    #expect(Converter.kind(of: svg) == .image)
+    let out = try Converter.convert(svg, to: .png, quality: 1, into: d)
+    #expect(NSImage(contentsOf: out[0]) != nil)
+  }
+
+  @Test func foldersAreOnlyZipped() throws {
     let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     let svg = d.appendingPathComponent("v.svg")
     try "<svg xmlns='http://www.w3.org/2000/svg'/>".write(to: svg, atomically: true, encoding: .utf8)
-    #expect(Converter.kind(of: svg) == .other)
     #expect(Converter.kind(of: d) == .other)
   }
 

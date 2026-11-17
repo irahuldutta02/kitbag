@@ -2,7 +2,9 @@
 # Builds Kitbag and publishes a GitHub release that the in-app updater can find.
 #
 #   scripts/release.sh patch|minor|major|X.Y.Z  [--notes "text" | --notes-file FILE]
-#                                               [--dry-run] [--no-publish] [--allow-dirty]
+#                                               [--dry-run] [--no-publish] [--allow-dirty] [--yes]
+#   Before pushing to GitHub it always asks for a yes (--yes skips the question, for automation).
+#   Without --notes/--notes-file it asks: automatic (from the git commits) or modifiable (opens your editor).
 #
 # What it does, in order:
 #   1. works out the new version and checks it is newer than the current one
@@ -26,7 +28,7 @@ REPO=$(/usr/libexec/PlistBuddy -c 'Print :KitbagUpdateRepo' "$PLIST" 2>/dev/null
 log() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-BUMP="" NOTES="" NOTES_FILE="" DRY=0 PUBLISH=1 DIRTY=0
+BUMP="" NOTES="" NOTES_FILE="" DRY=0 PUBLISH=1 DIRTY=0 YES=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --notes) NOTES="${2:?--notes needs text}"; shift 2 ;;
@@ -34,7 +36,8 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY=1; shift ;;
     --no-publish) PUBLISH=0; shift ;;
     --allow-dirty) DIRTY=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --yes|-y) YES=1; shift ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$BUMP" ]] || die "give one version"; BUMP="$1"; shift ;;
   esac
@@ -64,13 +67,39 @@ if [[ $DRY == 0 ]]; then
   fi
 fi
 
-# Release notes: given text, a file, or the commit subjects since the previous tag.
+# Release notes: given text, a file, or the commit subjects since the previous tag. With none of
+# those given, and a terminal to ask on, you choose between the automatic notes and writing your own.
+auto_notes() {
+  local prev range notes
+  prev=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+  range=${prev:+$prev..HEAD}
+  notes=$(git log ${range:-} --no-merges --pretty='- %s' -n 30 2>/dev/null || true)
+  [[ -n "$notes" ]] && echo "$notes" || echo "First release."
+}
 if [[ -n "$NOTES_FILE" ]]; then NOTES=$(cat "$NOTES_FILE")
 elif [[ -z "$NOTES" ]]; then
-  PREV=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
-  RANGE=${PREV:+$PREV..HEAD}
-  NOTES=$(git log ${RANGE:-} --no-merges --pretty='- %s' -n 30 2>/dev/null || true)
-  [[ -n "$NOTES" ]] || NOTES="First release."
+  NOTES=$(auto_notes)
+  if [[ -t 0 && -t 1 ]]; then
+    echo "Release notes from the git commits:"; echo "$NOTES" | sed 's/^/  /'; echo
+    echo "How should the release notes be written?"
+    echo "  1) Automatic: use the commit messages above"
+    echo "  2) Modifiable: edit them (or write your own)"
+    while true; do
+      read -r -p "Choose 1 or 2 [1]: " CHOICE
+      case "${CHOICE:-1}" in
+        1|a|A) break ;;
+        2|m|M)
+          TMP=$(mktemp -t kitbag-notes)
+          printf '%s\n' "$NOTES" > "$TMP"
+          echo "Opening ${VISUAL:-${EDITOR:-nano}}: edit the notes, save and close it."
+          ${VISUAL:-${EDITOR:-nano}} "$TMP" || true
+          EDITED=$(cat "$TMP"); rm -f "$TMP"
+          if [[ -n "${EDITED//[[:space:]]/}" ]]; then NOTES="$EDITED"; else echo "The notes were empty, so the automatic ones are used."; fi
+          break ;;
+        *) echo "Please type 1 or 2." ;;
+      esac
+    done
+  fi
 fi
 
 log "Kitbag $CURRENT -> $VERSION (tag $TAG, repo $REPO)"
@@ -105,6 +134,24 @@ trap - ERR
 if [[ $PUBLISH == 0 ]]; then
   log "Stopped before publishing. Files are in release/. To publish: git push origin HEAD $TAG, then create the release for $TAG and attach $DMG and $SUM."
   exit 0
+fi
+
+if [[ $YES == 0 ]]; then
+  if [[ -t 0 && -t 1 ]]; then
+    echo
+    echo "Ready to publish Kitbag $VERSION:"
+    echo "  - push the commit and tag $TAG to $REPO"
+    echo "  - create the GitHub release with $DMG and $SUM"
+    echo "Release notes:"; echo "$NOTES" | sed 's/^/  /'
+    read -r -p "Publish now? [y/N]: " OK
+    [[ "$OK" =~ ^[Yy]([Ee][Ss])?$ ]] || {
+      log "Not published. The build, commit and tag are kept locally. To publish later: git push origin HEAD $TAG, then create the release for $TAG and attach $DMG and $SUM."
+      exit 0
+    }
+  else
+    log "Not published: no terminal to ask for confirmation (pass --yes to publish without asking). Files are in release/."
+    exit 0
+  fi
 fi
 
 log "Pushing"
