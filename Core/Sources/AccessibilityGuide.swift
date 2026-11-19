@@ -2,9 +2,9 @@ import AppKit
 import ApplicationServices
 import SwiftUI
 
-/// Walks the user through the Accessibility permission the way other apps do: opens the exact
-/// Privacy & Security pane and floats a small helper with Kitbag's icon, which can be dragged
-/// into the list if the app isn't listed. It closes itself and carries on once access is granted.
+/// Walks the user through granting Accessibility permission: opens the Privacy & Security pane
+/// and floats a small helper with Kitbag's icon, which can be dragged into the list if needed.
+/// It closes itself and carries on once access is granted.
 @MainActor
 public final class AccessibilityGuide {
   private var panel: NSPanel?
@@ -67,21 +67,25 @@ private struct GuideView: View {
   var body: some View {
     HStack(spacing: 14) {
       Image(nsImage: NSWorkspace.shared.icon(forFile: Bundle.main.bundleURL.path))
-        .resizable().frame(width: 44, height: 44)
+        .resizable()
+        .frame(width: 44, height: 44)
         .onDrag { NSItemProvider(object: Bundle.main.bundleURL as NSURL) }
         .help("Drag into the Accessibility list")
       VStack(alignment: .leading, spacing: 3) {
-        Text("Allow Kitbag to control the menu bar").font(.headline)
+        Text("Allow Kitbag Accessibility access").font(.headline)
         Text(
-          "Turn Kitbag on in the Accessibility list. If it isn't listed, drag this icon into it."
+          "Enable Kitbag in Privacy & Security ▸ Accessibility. If it isn't listed, drag this icon into the list."
         )
-        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       }
       Button("Done", action: done)
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
     }
     .padding(14)
     .frame(width: 520)
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.primary.opacity(0.15)))
+    .glass(RoundedRectangle(cornerRadius: 16, style: .continuous))
   }
 }

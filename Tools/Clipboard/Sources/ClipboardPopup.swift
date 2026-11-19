@@ -23,11 +23,11 @@ private final class KeyPanel: NSPanel {
   }
 }
 
-/// The history pop-up that opens at the mouse pointer. It is built once and reused, so it shows instantly.
+/// The history pop-up that opens at the cursor. It is built once and reused, so it shows instantly.
 @MainActor
 final class ClipboardPopup {
-  static let width: CGFloat = 380
-  static let maxHeight: CGFloat = 430
+  static let width: CGFloat = 400
+  static let maxHeight: CGFloat = 440
 
   private unowned let model: ClipboardModel
   private let state = PopupState()
@@ -49,13 +49,13 @@ final class ClipboardPopup {
     state.query = ""
     state.selection = 0
     state.opened += 1
-    // Under the text cursor when the app tells us where it is, otherwise at the mouse pointer.
     anchor = CaretLocator.caretRect() ?? NSRect(origin: NSEvent.mouseLocation, size: .zero)
     place()
     p.makeKeyAndOrderFront(nil)
     guard clickMonitor == nil else { return }
-    // Clicking anywhere else closes it.
-    clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) {
+    clickMonitor = NSEvent.addGlobalMonitorForEvents(
+      matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    ) {
       [weak self] _ in MainActor.assumeIsolated { self?.close() }
     }
     resignObserver = NotificationCenter.default.addObserver(
@@ -71,33 +71,33 @@ final class ClipboardPopup {
     panel?.orderOut(nil)
   }
 
-  /// Sizes the panel to its rows and puts it by the anchor.
   private func place() {
     guard let p = panel else { return }
     let size = NSSize(width: Self.width, height: Self.height(for: model.filtered(state.query)))
-    let frame = Self.frame(anchor: anchor, size: size, screens: NSScreen.screens.map(\.visibleFrame))
+    let frame = Self.frame(
+      anchor: anchor, size: size, screens: NSScreen.screens.map(\.visibleFrame))
     if frame != p.frame { p.setFrame(frame, display: true) }
   }
 
-  /// Just tall enough for the rows, up to `maxHeight`.
   static func height(for items: [ClipItem]) -> CGFloat {
-    let chrome: CGFloat = 40 + 1 + 1 + 28  // search row, two dividers, footer
-    guard !items.isEmpty else { return chrome + 110 }
-    let rows = items.prefix(20).reduce(CGFloat(12)) { $0 + ($1.kind == .image ? 45 : 29) }
+    let chrome: CGFloat = 42 + 1 + 1 + 32  // search row, two dividers, footer
+    guard !items.isEmpty else { return chrome + 114 }
+    let rows = items.prefix(20).reduce(CGFloat(14)) { $0 + ($1.kind == .image ? 48 : 32) }
     return min(maxHeight, chrome + rows)
   }
 
-  /// Directly under the anchor, left edges aligned. If there is no room below it opens above
-  /// instead, and it is always moved as needed to stay fully on the anchor's screen.
   static func frame(anchor: NSRect, size: NSSize, screens: [NSRect]) -> NSRect {
     let probe = NSPoint(x: anchor.minX, y: anchor.midY)
-    guard let v = screens.first(where: { $0.insetBy(dx: -1, dy: -40).contains(probe) }) ?? screens.first else {
+    guard
+      let v = screens.first(where: { $0.insetBy(dx: -1, dy: -40).contains(probe) }) ?? screens.first
+    else {
       return NSRect(origin: anchor.origin, size: size)
     }
-    let gap: CGFloat = 6, margin: CGFloat = 8
+    let gap: CGFloat = 6
+    let margin: CGFloat = 8
     var o = NSPoint(x: anchor.minX, y: anchor.minY - gap - size.height)
     if o.y < v.minY + margin, anchor.maxY + gap + size.height <= v.maxY - margin {
-      o.y = anchor.maxY + gap  // no room below: open above
+      o.y = anchor.maxY + gap
     }
     o.x = max(v.minX + margin, min(o.x, v.maxX - size.width - margin))
     o.y = max(v.minY + margin, min(o.y, v.maxY - size.height - margin))
@@ -107,7 +107,8 @@ final class ClipboardPopup {
   private func makePanel() -> KeyPanel {
     let frame = NSRect(x: 0, y: 0, width: Self.width, height: Self.maxHeight)
     let p = KeyPanel(
-      contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+      contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: false)
     let blur = NSVisualEffectView(frame: frame)
     blur.material = .popover
     blur.blendingMode = .behindWindow
@@ -118,7 +119,8 @@ final class ClipboardPopup {
     blur.layer?.masksToBounds = true
     let host = NSHostingView(
       rootView: PopupView(
-        model: model, state: state, choose: { [weak self] item, plain in self?.choose(item, plain: plain) }))
+        model: model, state: state,
+        choose: { [weak self] item, plain in self?.choose(item, plain: plain) }))
     host.frame = frame
     host.autoresizingMask = [.width, .height]
     blur.addSubview(host)
@@ -130,7 +132,7 @@ final class ClipboardPopup {
     p.backgroundColor = .clear
     p.hasShadow = true
     p.isReleasedWhenClosed = false
-    p.animationBehavior = .none  // appear at once
+    p.animationBehavior = .none
     p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
     p.onKey = { [weak self] in self?.key($0) }
     return p
@@ -145,7 +147,7 @@ final class ClipboardPopup {
 
   private func key(_ e: NSEvent) {
     handle(e)
-    if isShown { place() }  // searching or deleting changes how many rows there are
+    if isShown { place() }
   }
 
   private func handle(_ e: NSEvent) {
@@ -185,7 +187,6 @@ final class ClipboardPopup {
           if items.indices.contains(n - 1) { choose(items[n - 1], plain: false) }
         } else if typed == "p", let current {
           model.togglePin(current.id)
-          // Stay on the same item after it moved.
           state.selection = model.filtered(state.query).firstIndex { $0.id == current.id } ?? 0
         } else if typed == "c", let current {
           model.copy(current)
@@ -196,9 +197,12 @@ final class ClipboardPopup {
       } else if mods == .control, typed == "p" {
         move(-1)
       } else if mods.subtracting(.shift).isEmpty, let chars = e.characters,
-        !chars.isEmpty, chars.unicodeScalars.allSatisfy({ $0.value >= 0x20 && !(0xF700...0xF8FF).contains($0.value) })
+        !chars.isEmpty,
+        chars.unicodeScalars.allSatisfy({
+          $0.value >= 0x20 && !(0xF700...0xF8FF).contains($0.value)
+        })
       {
-        state.query += chars  // just start typing to search
+        state.query += chars
       }
     }
   }
@@ -210,40 +214,75 @@ private struct PopupView: View {
   @ObservedObject var model: ClipboardModel
   @ObservedObject var state: PopupState
   let choose: (ClipItem, Bool) -> Void
+  @Environment(\.colorScheme) private var scheme
 
   var body: some View {
     let items = model.filtered(state.query)
     VStack(spacing: 0) {
+      // Search header
       HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 13, weight: .medium))
+          .foregroundStyle(state.query.isEmpty ? Color.secondary : Color.accentColor)
         if state.query.isEmpty {
-          Text("Type to search").foregroundStyle(.tertiary)
+          Text("Type to search clipboard…")
+            .font(.callout)
+            .foregroundStyle(.tertiary)
         } else {
-          Text(state.query).lineLimit(1).truncationMode(.head)
+          Text(state.query)
+            .font(.callout.weight(.medium))
+            .lineLimit(1)
+            .truncationMode(.head)
         }
         Spacer(minLength: 4)
         if model.paused {
-          Label("Paused", systemImage: "pause.fill").font(.caption).foregroundStyle(.orange)
+          HStack(spacing: 4) {
+            StatusDot(color: KitbagUI.warning, size: 5.5)
+            Text("Paused").font(.caption2.weight(.semibold)).foregroundStyle(KitbagUI.warning)
+          }
+          .padding(.horizontal, 6)
+          .padding(.vertical, 2)
+          .background(KitbagUI.warning.opacity(0.14), in: Capsule())
         }
-        Text("\(items.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        Text("\(items.count)")
+          .font(.caption2.weight(.semibold).monospacedDigit())
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 6.5)
+          .padding(.vertical, 2)
+          .background(Color.primary.opacity(0.07), in: Capsule())
       }
-      .padding(.horizontal, 14).frame(height: 40)
-      Divider()
+      .padding(.horizontal, 14)
+      .frame(height: 42)
+
+      Divider().opacity(0.55)
+
       if items.isEmpty {
         VStack(spacing: 6) {
-          Image(systemName: "doc.on.clipboard").font(.title).foregroundStyle(.tertiary)
-          Text(state.query.isEmpty ? "Nothing copied yet" : "No matches").foregroundStyle(.secondary)
+          Image(systemName: state.query.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
+            .font(.system(size: 24, weight: .light))
+            .foregroundStyle(.tertiary)
+          Text(state.query.isEmpty ? "Nothing copied yet" : "No matches")
+            .font(.callout)
+            .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollViewReader { proxy in
           ScrollView {
-            LazyVStack(spacing: 1) {
+            LazyVStack(spacing: 2) {
               ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                ClipRow(model: model, item: item, selected: index == state.selection, badge: index < 9 ? "⌘\(index + 1)" : nil)
-                  .contentShape(Rectangle())
-                  .onTapGesture { choose(item, false) }
-                  .id(item.id)
+                ClipRow(
+                  model: model, item: item, selected: index == state.selection,
+                  badge: index < 9 ? "⌘\(index + 1)" : nil
+                )
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                  if hovering && state.selection != index {
+                    state.selection = index
+                  }
+                }
+                .onTapGesture { choose(item, false) }
+                .id(item.id)
               }
             }
             .padding(6)
@@ -256,25 +295,55 @@ private struct PopupView: View {
           }
         }
       }
-      Divider()
-      HStack(spacing: 10) {
+
+      Divider().opacity(0.55)
+
+      // Footer with source info + crisp keycap hints
+      HStack(spacing: 8) {
         if items.indices.contains(state.selection) {
-          Text(Self.info(items[state.selection])).lineLimit(1).truncationMode(.middle)
+          Text(Self.info(items[state.selection]))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
         Spacer(minLength: 4)
-        Text("↵ Paste   ⌥↵ Plain   ⌘P Pin   ⌘⌫ Delete").lineLimit(1).fixedSize().layoutPriority(1)
+        HStack(spacing: 6) {
+          hint("↵", "Paste")
+          hint("⌥↵", "Plain")
+          hint("⌘P", "Pin")
+          hint("⌘⌫", "Del")
+        }
+        .fixedSize()
+        .layoutPriority(1)
       }
-      .font(.caption).foregroundStyle(.secondary)
-      .padding(.horizontal, 12).frame(height: 28)
+      .padding(.horizontal, 12)
+      .frame(height: 32)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .overlay(
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .strokeBorder(
+          scheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.11),
+          lineWidth: 0.75
+        )
+    )
   }
 
-  /// "Safari · 5 min ago" for the selected item.
+  private func hint(_ key: String, _ label: LocalizedStringKey) -> some View {
+    HStack(spacing: 3) {
+      KeycapBadge(key)
+      Text(label).font(.caption2).foregroundStyle(.secondary)
+    }
+  }
+
+  /// "Safari · 5m ago" for the selected item.
   static func info(_ item: ClipItem) -> String {
     let ago = RelativeDateTimeFormatter()
     ago.unitsStyle = .abbreviated
-    let when = -item.date.timeIntervalSinceNow < 5 ? "now" : ago.localizedString(for: item.date, relativeTo: Date())
+    let when =
+      -item.date.timeIntervalSinceNow < 5
+      ? "now" : ago.localizedString(for: item.date, relativeTo: Date())
     return [item.app, when].compactMap { $0 }.joined(separator: " · ")
   }
 }
@@ -291,26 +360,38 @@ struct ClipRow: View {
       if item.kind == .image {
         ClipThumb(model: model, item: item)
       } else {
-        Image(systemName: item.symbol).font(.system(size: 12))
-          .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
-          .frame(width: 18)
+        Image(systemName: item.symbol)
+          .font(.system(size: 11.5, weight: .medium))
+          .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
+          .frame(width: 22, height: 22)
+          .background(
+            selected ? Color.white.opacity(0.16) : Color.primary.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+          )
       }
-      Text(item.title).lineLimit(1).truncationMode(.tail)
+      Text(item.title)
+        .font(.callout)
+        .lineLimit(1)
+        .truncationMode(.tail)
         .foregroundStyle(selected ? Color.white : Color.primary)
       Spacer(minLength: 4)
       if item.pinned {
-        Image(systemName: "pin.fill").font(.system(size: 10))
-          .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.orange)
+        Image(systemName: "pin.fill")
+          .font(.system(size: 9.5))
+          .foregroundStyle(selected ? Color.white.opacity(0.9) : KitbagUI.warning)
       }
       if let badge {
-        Text(badge).font(.caption2.monospaced())
-          .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary.opacity(0.7))
+        Text(badge)
+          .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+          .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary.opacity(0.75))
       }
     }
     .padding(.horizontal, 8)
-    .frame(height: item.kind == .image ? 44 : 28)
+    .frame(height: item.kind == .image ? 46 : 30)
     .background {
-      if selected { RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor) }
+      if selected {
+        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accentColor)
+      }
     }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -335,8 +416,14 @@ private struct ClipThumb: View {
       }
     }
     .frame(width: 56, height: 36)
-    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
-    .clipShape(RoundedRectangle(cornerRadius: 5))
+    .background(
+      Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+    )
     .task(id: item.id) { box.image = await model.thumbnail(item) }
   }
 }

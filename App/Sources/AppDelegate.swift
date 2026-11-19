@@ -3,11 +3,14 @@ import KitbagCore
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate, NSToolbarDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate,
+  NSToolbarDelegate
+{
   let manager = ToolManager(descriptors: AllTools.descriptors)
   private var statusItem: NSStatusItem!
   private let popover = NSPopover()
   private let state = PopoverState()
+  private let settingsNav = SettingsNav()
   private let connectivity = ConnectivityStatus()
   private var settingsWindow: NSWindow?
   private var sizeObservation: NSKeyValueObservation?
@@ -71,9 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     // Content is built only now and released on close.
     let host = NSHostingController(
       rootView: PopoverView(manager: manager, state: state, connectivity: connectivity) {
-        [weak self] in
+        [weak self] targetPage in
         self?.popover.performClose(nil)
-        self?.openSettings()
+        self?.openSettings(page: targetPage)
       })
     host.sizingOptions = .preferredContentSize
     popover.contentViewController = host
@@ -106,10 +109,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
   // MARK: Settings window (created on demand, released on close)
 
-  private func openSettings() {
+  private func openSettings(page: String? = nil) {
+    if let page {
+      settingsNav.page = page
+    }
     if settingsWindow == nil {
       let w = NSWindow(
-        contentViewController: NSHostingController(rootView: SettingsView(manager: manager)))
+        contentViewController: NSHostingController(
+          rootView: SettingsView(manager: manager, nav: settingsNav)))
       w.title = "Kitbag"
       // Modern macOS look: content runs under a transparent title bar, like System Settings.
       w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -120,9 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       w.isMovableByWindowBackground = true
       // No native full screen: it hides the window buttons. The green button zooms the window instead.
       w.collectionBehavior.insert(.fullScreenNone)
-      // The SwiftUI toolbar gives the taller title bar, so the window buttons sit inside the sidebar like System Settings.
-      // The toolbar makes the title bar taller (window buttons sit inside the sidebar) and holds the
-      // Terminal button, so the button gets native styling and clicks reach it.
       let toolbar = NSToolbar(identifier: "KitbagToolbar")
       toolbar.delegate = self
       toolbar.displayMode = .iconOnly
@@ -170,7 +174,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   }
 
   // MARK: Toolbar: empty; it only gives the taller title bar so the window buttons sit in the sidebar.
-  // The Terminal button floats at the bottom right of the window (see SettingsView).
 
   func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
     [.flexibleSpace]
@@ -223,83 +226,197 @@ struct PopoverView: View {
   @ObservedObject private var updater = Updater.shared
   @ObservedObject var state: PopoverState
   @ObservedObject var connectivity: ConnectivityStatus
-  let openSettings: () -> Void
+  let openSettings: (String?) -> Void
+
+  @Environment(\.colorScheme) private var scheme
 
   private var tabs: [(descriptor: ToolDescriptor, tool: any KitbagTool)] {
     manager.enabledTools.filter {
-      $0.descriptor.showsTab && $0.descriptor.showsMenuTab && (!state.dropMode || $0.tool.acceptsFileDrops)
+      $0.descriptor.showsTab && $0.descriptor.showsMenuTab
+        && (!state.dropMode || $0.tool.acceptsFileDrops)
     }
   }
-  private var currentID: String? {
-    (tabs.first { $0.descriptor.id == state.selected } ?? tabs.first)?.descriptor.id
+  private var currentTab: (descriptor: ToolDescriptor, tool: any KitbagTool)? {
+    tabs.first { $0.descriptor.id == state.selected } ?? tabs.first
+  }
+  private var currentID: String? { currentTab?.descriptor.id }
+
+  private var tabTrackFill: Color {
+    scheme == .dark ? Color.white.opacity(0.065) : Color.black.opacity(0.048)
+  }
+  private var tabTrackBorder: Color {
+    scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.07)
   }
 
   var body: some View {
-    VStack(spacing: 12) {
-      if updater.bannerVisible { UpdateBanner() }  // not even a gap when there is nothing to show
-      HStack(alignment: .center) {
+    VStack(spacing: 10) {
+      if updater.bannerVisible { UpdateBanner() }
+
+      // Top navigation strip: segmented icon bar + quick connectivity buttons
+      HStack(alignment: .center, spacing: 8) {
         if !tabs.isEmpty {
-          HStack(spacing: 4) {
-            ForEach(tabs, id: \.descriptor.id) { tab in
-              let on = tab.descriptor.id == currentID
-              Button {
-                state.selected = tab.descriptor.id
-              } label: {
-                ToolIcon(tab.descriptor)
-                  .font(.system(size: 14, weight: .medium))
-                  .foregroundStyle(on ? Color.white : Color.secondary)
-                  .frame(width: tabs.count > 6 ? 32 : 40, height: 28)
-                  .background {
-                    if on { Capsule().fill(Color.accentColor) }
-                  }
-                  .contentShape(Capsule())
-              }
-              .buttonStyle(PressableStyle())
-              .help(Text(tab.descriptor.name))
-              .accessibilityLabel(Text(tab.descriptor.name))
-              .accessibilityAddTraits(on ? .isSelected : [])
+          HStack(spacing: 2) {
+            ForEach(Array(tabs.enumerated()), id: \.element.descriptor.id) { index, tab in
+              tabButton(tab.descriptor, index: index)
             }
           }
           .padding(3)
-          .glass(Capsule())
+          .background(tabTrackFill, in: Capsule())
+          .overlay(Capsule().strokeBorder(tabTrackBorder, lineWidth: 0.5))
         }
-        Spacer(minLength: 8)
+        Spacer(minLength: 4)
         ConnectivityButtons(status: connectivity)
       }
-      if tabs.isEmpty {
-        Text("No tools enabled. Turn some on in Settings.").foregroundStyle(.secondary)
-      } else {
-        if let tab = tabs.first(where: { $0.descriptor.id == currentID }) {
-          tab.tool.makeMenuView()
-            .id(currentID)
+
+      // Active tool title bar
+      if let tab = currentTab {
+        HStack(spacing: 8) {
+          Look.tile(
+            ToolIcon(tab.descriptor).scaleEffect(0.78),
+            Look.tint(tab.descriptor.id),
+            size: 20
+          )
+          Text(tab.descriptor.name)
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+          Spacer(minLength: 6)
+          Button {
+            openSettings(tab.descriptor.id)
+          } label: {
+            Image(systemName: "slider.horizontal.3")
+              .font(.system(size: 11.5, weight: .medium))
+              .foregroundStyle(.secondary)
+              .frame(width: 24, height: 22)
+              .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          .hoverHighlight(cornerRadius: 6)
+          .help("Configure \(Text(tab.descriptor.name))")
+          .accessibilityLabel("Configure \(Text(tab.descriptor.name))")
         }
+        .padding(.horizontal, 2)
       }
+
+      // Active tool content
+      if tabs.isEmpty {
+        VStack(spacing: 8) {
+          Image(systemName: "square.grid.2x2")
+            .font(.system(size: 26, weight: .light))
+            .foregroundStyle(.tertiary)
+          Text("No tools enabled")
+            .font(.callout.weight(.medium))
+          Text("Turn on the utilities you want in Settings.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Button("Open Settings") { openSettings("general") }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .card()
+      } else if let tab = currentTab {
+        tab.tool.makeMenuView()
+          .id(currentID)
+      }
+
+      // Startup errors, if any
       ForEach(manager.descriptors) { d in
         if let err = manager.errors[d.id] {
-          Label("\(Text(d.name)) couldn't start: \(err)", systemImage: "exclamationmark.triangle")
-            .foregroundStyle(.red).font(.caption)
+          HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(KitbagUI.danger)
+            Text("\(Text(d.name)) couldn't start: \(err)")
+              .font(.caption)
+              .foregroundStyle(KitbagUI.danger)
+              .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+          }
+          .padding(.horizontal, 10)
+          .padding(.vertical, 7)
+          .background(
+            KitbagUI.danger.opacity(0.1),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+          )
         }
       }
+
+      // Grounded footer
+      Divider().opacity(0.55)
       HStack {
-        Button(action: openSettings) { Label("Settings", systemImage: "gearshape") }
-          .keyboardShortcut(",")
+        Button {
+          openSettings(currentID ?? "general")
+        } label: {
+          HStack(spacing: 5) {
+            Image(systemName: "gearshape")
+              .font(.system(size: 12, weight: .medium))
+            Text("Settings…")
+          }
+          .padding(.horizontal, 7)
+          .padding(.vertical, 4)
+          .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .hoverHighlight(cornerRadius: 6)
+        .keyboardShortcut(",")
+
         Spacer()
+
         Button {
           NSApp.terminate(nil)
         } label: {
-          Label("Quit", systemImage: "power")
+          HStack(spacing: 5) {
+            Image(systemName: "power")
+              .font(.system(size: 11.5, weight: .medium))
+            Text("Quit")
+          }
+          .padding(.horizontal, 7)
+          .padding(.vertical, 4)
+          .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
+        .buttonStyle(.plain)
+        .hoverHighlight(cornerRadius: 6, tint: KitbagUI.danger)
         .keyboardShortcut("q")
       }
-      .buttonStyle(.plain)
       .font(.callout)
       .foregroundStyle(.secondary)
-      .padding(.horizontal, 4)
     }
-    .padding(14)
-    .frame(width: tabs.count > 6 ? 400 : 360)  // more tabs need more room
-    .frame(maxHeight: .infinity, alignment: .top)  // never re-center while resizing
+    .padding(.horizontal, 13)
+    .padding(.top, 12)
+    .padding(.bottom, 10)
+    .frame(width: tabs.count > 7 ? 404 : 380)
+    .frame(maxHeight: .infinity, alignment: .top)
     .onAppear { manager.setVisibleTool(currentID) }
     .onChange(of: currentID) { _, new in manager.setVisibleTool(new) }
+  }
+
+  @ViewBuilder
+  private func tabButton(_ descriptor: ToolDescriptor, index: Int) -> some View {
+    let on = descriptor.id == currentID
+    let itemWidth: CGFloat = tabs.count > 7 ? 31 : (tabs.count > 5 ? 35 : 40)
+
+    let btn = Button {
+      state.selected = descriptor.id
+    } label: {
+      ToolIcon(descriptor)
+        .font(.system(size: 13.5, weight: .medium))
+        .foregroundStyle(on ? Color.white : Color.secondary)
+        .frame(width: itemWidth, height: 27)
+        .background {
+          if on { Capsule().fill(Color.accentColor) }
+        }
+        .capsuleHoverHighlight(tint: on ? nil : Color.primary)
+        .contentShape(Capsule())
+    }
+    .buttonStyle(PressableStyle())
+    .help(index < 9 ? "\(Text(descriptor.name)) (⌘\(index + 1))" : "\(Text(descriptor.name))")
+    .accessibilityLabel(Text(descriptor.name))
+    .accessibilityAddTraits(on ? .isSelected : [])
+
+    if index < 9 {
+      btn.keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+    } else {
+      btn
+    }
   }
 }

@@ -20,97 +20,160 @@ import SwiftUI
   var monitor: Any?
 }
 
-/// The tab in the menu pop-up: pause switch, search, the history, and Clear.
+/// The tab in the menu pop-up: recording status, search, history, and Clear.
 struct ClipboardView: View {
   @ObservedObject var model: ClipboardModel
   @StateObject private var ui = TabState()
 
   var body: some View {
     let items = model.filtered(ui.query)
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 9) {
+      // Status strip
       HStack(spacing: 8) {
-        Image(systemName: model.paused ? "pause.circle.fill" : "record.circle")
-          .foregroundStyle(model.paused ? Color.orange : Color.green)
+        StatusDot(
+          color: model.paused ? KitbagUI.warning : KitbagUI.success,
+          active: !model.paused,
+          size: 7
+        )
         VStack(alignment: .leading, spacing: 1) {
-          Text(model.paused ? "Paused" : "Saving what you copy").font(.callout.weight(.medium))
-          Text(model.paused ? "New copies are not saved" : "\(model.shortcut.display) opens the history by your cursor")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(model.paused ? "History paused" : "Recording copies")
+            .font(.callout.weight(.semibold))
+          HStack(spacing: 4) {
+            if model.paused {
+              Text("New copies won't be saved").font(.caption).foregroundStyle(.secondary)
+            } else {
+              KeycapBadge(model.shortcut.display)
+              Text("opens at cursor").font(.caption).foregroundStyle(.secondary)
+            }
+          }
         }
         Spacer(minLength: 4)
-        Toggle("Save what I copy", isOn: Binding(get: { !model.paused }, set: { model.paused = !$0 }))
-          .toggleStyle(.switch).controlSize(.small).labelsHidden()
-          .help(model.paused ? "Start saving again" : "Pause saving")
+        Toggle(
+          "Save what I copy",
+          isOn: Binding(get: { !model.paused }, set: { model.paused = !$0 })
+        )
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .labelsHidden()
+        .help(model.paused ? "Resume recording" : "Pause recording")
       }
+
       if !model.shortcutWorks {
-        Label("\(model.shortcut.display) is taken by another app. Pick another in Settings.", systemImage: "exclamationmark.triangle")
-          .font(.caption).foregroundStyle(.orange)
+        Label(
+          "\(model.shortcut.display) is taken by another app. Pick another in Settings.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(KitbagUI.warning)
       }
-      Divider()
-      HStack(spacing: 6) {
-        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-        TextField("Search", text: $ui.query).textFieldStyle(.plain)
-        if !ui.query.isEmpty {
-          Button { ui.query = "" } label: { Image(systemName: "xmark.circle.fill") }
-            .buttonStyle(.plain).foregroundStyle(.secondary)
-        }
-      }
+
+      SearchFieldBar("Search clipboard…", text: $ui.query)
+
       if items.isEmpty {
-        Text(ui.query.isEmpty ? "Nothing copied yet" : "No matches")
-          .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 18)
+        VStack(spacing: 6) {
+          Image(systemName: ui.query.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
+            .font(.system(size: 22, weight: .light))
+            .foregroundStyle(.tertiary)
+          Text(ui.query.isEmpty ? "Nothing copied yet" : "No matches")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 22)
       } else {
         ScrollView {
-          LazyVStack(spacing: 1) {
+          LazyVStack(spacing: 2) {
             ForEach(items) { item in row(item) }
           }
         }
         .frame(height: min(Self.height(items), 300))
       }
-      Divider()
+
+      Divider().opacity(0.45)
+
       HStack {
         Text(model.items.count == 1 ? "1 item" : "\(model.items.count) items")
-          .font(.caption).foregroundStyle(.secondary)
+          .font(.caption)
+          .foregroundStyle(.secondary)
         Spacer()
-        Menu("Clear") {
-          Button("Clear History (keep pinned)") { model.clear(keepPinned: true) }
+        Menu {
+          Button("Clear History (Keep Pinned)") { model.clear(keepPinned: true) }
           Button("Clear Everything", role: .destructive) { model.clear(keepPinned: false) }
+        } label: {
+          HStack(spacing: 3) {
+            Text("Clear")
+            Image(systemName: "chevron.down").font(.system(size: 8.5, weight: .bold))
+          }
+          .font(.caption.weight(.medium))
+          .foregroundStyle(model.items.isEmpty ? .tertiary : .secondary)
+          .padding(.horizontal, 7)
+          .padding(.vertical, 3)
+          .hoverHighlight(cornerRadius: 6)
         }
-        .menuStyle(.borderlessButton).fixedSize()
+        .menuStyle(.borderlessButton)
+        .fixedSize()
         .disabled(model.items.isEmpty)
       }
     }
-    .card()
+    .card(padding: 11)
   }
 
   private static func height(_ items: [ClipItem]) -> CGFloat {
-    items.reduce(0) { $0 + ($1.kind == .image ? 45 : 29) }
+    items.reduce(0) { $0 + ($1.kind == .image ? 48 : 32) }
   }
 
   private func row(_ item: ClipItem) -> some View {
     ClipRow(model: model, item: item)
       .overlay(alignment: .trailing) {
         if ui.copied == item.id {
-          Label("Copied", systemImage: "checkmark").font(.caption).foregroundStyle(.green)
-            .padding(.horizontal, 8).frame(maxHeight: .infinity)
-            .background(.regularMaterial, in: Capsule())
+          Label("Copied", systemImage: "checkmark")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(KitbagUI.success, in: Capsule())
+            .padding(.trailing, 4)
+            .transition(.opacity.combined(with: .scale(scale: 0.92)))
         } else if ui.hovered == item.id {
           HStack(spacing: 2) {
-            Button { model.togglePin(item.id) } label: {
-              Image(systemName: item.pinned ? "pin.slash" : "pin").frame(width: 22, height: 22)
+            Button {
+              model.togglePin(item.id)
+            } label: {
+              Image(systemName: item.pinned ? "pin.slash" : "pin")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
             }
-            .help(item.pinned ? "Unpin" : "Pin to the top")
-            Button { model.delete(item.id) } label: {
-              Image(systemName: "trash").frame(width: 22, height: 22)
+            .capsuleHoverHighlight()
+            .help(item.pinned ? "Unpin" : "Pin to top")
+
+            Button {
+              model.delete(item.id)
+            } label: {
+              Image(systemName: "trash")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(KitbagUI.danger)
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
             }
+            .capsuleHoverHighlight(tint: KitbagUI.danger)
             .help("Delete")
           }
-          .buttonStyle(.plain).foregroundStyle(.secondary)
-          .padding(.horizontal, 4)
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 3)
+          .padding(.vertical, 2)
           .background(.regularMaterial, in: Capsule())
+          .padding(.trailing, 4)
         }
       }
       .background {
-        if ui.hovered == item.id { RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.08)) }
+        if ui.hovered == item.id {
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.primary.opacity(0.075))
+        }
       }
+      .animation(.easeOut(duration: 0.14), value: ui.copied == item.id)
       .contentShape(Rectangle())
       .onTapGesture {
         model.copy(item)
@@ -132,7 +195,9 @@ struct ClipboardSettingsView: View {
   private let guide = AccessibilityGuide()
 
   private func reset() {
-    picker.message = model.setShortcut(.default) ? nil : "\(ClipShortcut.default.display) is taken by another app."
+    picker.message =
+      model.setShortcut(.default)
+      ? nil : "\(ClipShortcut.default.display) is taken by another app."
   }
 
   private func startRecording() {
@@ -145,10 +210,16 @@ struct ClipboardSettingsView: View {
         return nil
       }
       let mods = ClipShortcut.carbonModifiers(e.modifierFlags)
-      guard mods != 0 else { NSSound.beep(); return nil }  // needs at least one modifier key
-      let new = ClipShortcut(keyCode: UInt32(e.keyCode), modifiers: mods, label: ClipShortcut.label(for: e))
+      guard mods != 0 else {
+        NSSound.beep()
+        return nil
+      }  // needs at least one modifier key
+      let new = ClipShortcut(
+        keyCode: UInt32(e.keyCode), modifiers: mods, label: ClipShortcut.label(for: e))
       stopRecording()
-      if !model.setShortcut(new) { picker.message = "\(new.display) is taken by another app. Try a different one." }
+      if !model.setShortcut(new) {
+        picker.message = "\(new.display) is taken by another app. Try a different one."
+      }
       return nil
     }
   }
@@ -161,7 +232,10 @@ struct ClipboardSettingsView: View {
   }
 
   var body: some View {
-    Toggle("Save what I copy", isOn: Binding(get: { !model.paused }, set: { model.paused = !$0 }))
+    Toggle(
+      "Save what I copy",
+      isOn: Binding(get: { !model.paused }, set: { model.paused = !$0 })
+    )
     Picker("Keep the last", selection: $model.limit) {
       ForEach(ClipboardModel.limits, id: \.self) { Text("\($0) items").tag($0) }
     }
@@ -170,24 +244,34 @@ struct ClipboardSettingsView: View {
         Text(picker.recording ? "Press new keys…" : model.shortcut.display)
           .font(.system(.body, design: .rounded).weight(.medium))
           .foregroundStyle(picker.recording ? Color.accentColor : .primary)
-          .padding(.horizontal, 10).padding(.vertical, 4)
-          .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+          .padding(.horizontal, 10)
+          .padding(.vertical, 4)
+          .background(
+            .quaternary.opacity(0.6),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+          )
         if model.shortcut != .default && !picker.recording {
           Button("Reset") { reset() }.controlSize(.small)
         }
-        Button(picker.recording ? "Cancel" : "Change") { picker.recording ? stopRecording() : startRecording() }
-          .controlSize(.small)
+        Button(picker.recording ? "Cancel" : "Change") {
+          picker.recording ? stopRecording() : startRecording()
+        }
+        .controlSize(.small)
       }
     }
-    if let m = picker.message { Text(m).font(.caption).foregroundStyle(.red) }
+    if let m = picker.message { Text(m).font(.caption).foregroundStyle(KitbagUI.danger) }
     LabeledContent("Paste into the app in front") {
       if access.trusted {
-        Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(KitbagUI.success)
       } else {
         Button("Allow Accessibility…") { guide.begin { access.trusted = true } }
       }
     }
-    Text("Passwords copied from password managers are never saved. Pinned items stay until you remove them.")
-      .font(.caption).foregroundStyle(.secondary)
+    Text(
+      "Passwords copied from password managers are never saved. Pinned items stay until you remove them."
+    )
+    .font(.caption)
+    .foregroundStyle(.secondary)
+    .onDisappear { if picker.recording { stopRecording() } }
   }
 }

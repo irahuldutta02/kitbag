@@ -1,4 +1,5 @@
 import AppKit
+import KitbagCore
 import SwiftUI
 
 enum PopupContent {
@@ -32,7 +33,7 @@ final class ResultPopup {
     p.isOpaque = false
     p.backgroundColor = .clear
     p.hasShadow = true
-    p.isMovableByWindowBackground = true  // drag it by any non-button area
+    p.isMovableByWindowBackground = true
     p.isReleasedWhenClosed = false
     p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     p.contentView = host
@@ -56,7 +57,6 @@ final class ResultPopup {
     panels.removeAll { $0 === p }
   }
 
-  /// Closes every popup (used when the tool is turned off).
   func close() {
     for p in panels {
       p.orderOut(nil)
@@ -75,19 +75,38 @@ private struct ResultPopupView: View {
     VStack(alignment: .leading, spacing: 10) {
       HStack {
         switch content {
-        case .color: Label("Color", systemImage: "eyedropper").font(.subheadline.bold())
-        case .size: Label("Size", systemImage: "ruler").font(.subheadline.bold())
+        case .color:
+          Label("Color", systemImage: "eyedropper")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.pink, .primary)
+        case .size:
+          Label("Measurement", systemImage: "ruler")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.orange, .primary)
         }
         Spacer()
-        Button(action: close) { Image(systemName: "xmark.circle.fill") }
-          .buttonStyle(.borderless).foregroundStyle(.secondary)
-          .accessibilityLabel("Close")
+        Button(action: close) {
+          Image(systemName: "xmark")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.secondary)
+            .frame(width: 22, height: 22)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .capsuleHoverHighlight()
+        .accessibilityLabel("Close")
       }
       switch content {
       case .color(let c):
-        HStack(alignment: .top, spacing: 12) {
-          RoundedRectangle(cornerRadius: 10).fill(c.color).frame(width: 56, height: 56)
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.2)))
+        HStack(alignment: .center, spacing: 12) {
+          RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(c.color)
+            .frame(width: 58, height: 58)
+            .overlay(
+              RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(.primary.opacity(0.18), lineWidth: 0.75)
+            )
+            .shadow(color: c.color.opacity(0.28), radius: 4, y: 1)
           VStack(spacing: 4) {
             CopyRow(title: "HEX", value: c.hex, copy: copy)
             CopyRow(title: "RGB", value: c.rgb, copy: copy)
@@ -101,15 +120,13 @@ private struct ResultPopupView: View {
         }
       }
     }
-    .padding(12)
-    .frame(width: 280)
-    .background(WindowDragArea())  // behind the content, in front of the material
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.primary.opacity(0.15)))
+    .padding(13)
+    .frame(width: 292)
+    .background(WindowDragArea())
+    .glass(RoundedRectangle(cornerRadius: 15, style: .continuous))
   }
 }
 
-/// Lets the user drag the window by pressing anywhere on the card that isn't a control.
 private struct WindowDragArea: NSViewRepresentable {
   func makeNSView(context: Context) -> NSView { DragView() }
   func updateNSView(_ nsView: NSView, context: Context) {}

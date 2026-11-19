@@ -8,87 +8,161 @@ struct ShelfView: View {
   var body: some View {
     VStack(spacing: 10) {
       ModeSwitch(mode: $model.mode)
-      Text(
-        model.mode == .copy
-          ? "Dragging out copies the files." : "Dragging out moves the files."
-      )
-      .font(.caption).foregroundStyle(.secondary)
 
       Group {
         if model.items.isEmpty {
-          VStack(spacing: 8) {
-            Image(systemName: "tray.and.arrow.down.fill")
-              .font(.system(size: 34, weight: .light))
-              .foregroundStyle(model.dropTargeted ? Color.accentColor : .secondary)
-            Text("Drop files or folders here").font(.callout.weight(.medium))
-            Text("They wait here until you drag them out.")
-              .font(.caption).foregroundStyle(.secondary)
+          VStack(spacing: 9) {
+            ZStack {
+              Circle()
+                .fill(
+                  model.dropTargeted
+                    ? Color.accentColor.opacity(0.18)
+                    : Color.accentColor.opacity(0.10)
+                )
+                .frame(width: 48, height: 48)
+              Image(systemName: "tray.and.arrow.down.fill")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(
+                  model.dropTargeted ? Color.accentColor : Color.accentColor.opacity(0.85)
+                )
+                .scaleEffect(model.dropTargeted ? 1.1 : 1)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: model.dropTargeted)
+            }
+            VStack(spacing: 2) {
+              Text(model.dropTargeted ? "Release to add to shelf" : "Drop files or folders here")
+                .font(.callout.weight(.semibold))
+              Text(
+                model.mode == .copy
+                  ? "Hold items temporarily, then drag out to copy."
+                  : "Hold items temporarily, then drag out to move."
+              )
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+            }
             HStack(spacing: 8) {
-              Button { model.addFromPicker() } label: { Label("Add files…", systemImage: "plus") }
-              Button { model.pasteFromClipboard() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
-                .keyboardShortcut("v", modifiers: .command)
+              Button {
+                model.addFromPicker()
+              } label: {
+                Label("Add Files…", systemImage: "plus")
+              }
+              .buttonStyle(.borderedProminent)
+              Button {
+                model.pasteFromClipboard()
+              } label: {
+                Label("Paste", systemImage: "doc.on.clipboard")
+              }
+              .buttonStyle(.bordered)
+              .keyboardShortcut("v", modifiers: .command)
             }
             .controlSize(.small)
+            .padding(.top, 2)
           }
-          .frame(maxWidth: .infinity, minHeight: 150)
+          .frame(maxWidth: .infinity, minHeight: 152)
         } else {
           VStack(spacing: 10) {
             StackView(model: model)
-            Text("Drag the stack to a folder or app").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 10) {
-              Button { model.listExpanded.toggle() } label: {
+            Text(
+              model.mode == .copy
+                ? "Drag stack out to copy" : "Drag stack out to move"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+              Button {
+                withAnimation(.easeInOut(duration: 0.16)) { model.listExpanded.toggle() }
+              } label: {
                 HStack(spacing: 4) {
-                  Text(footer).font(.caption.weight(.medium))
-                  Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                  Text(footer).font(.caption.weight(.semibold))
+                  Image(systemName: "chevron.right")
+                    .font(.system(size: 8.5, weight: .bold))
                     .rotationEffect(.degrees(model.listExpanded ? 90 : 0))
                 }
-                .contentShape(Rectangle())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
               }
               .buttonStyle(.plain)
+              .hoverHighlight(cornerRadius: 6)
               .help(model.listExpanded ? "Hide files" : "Show files")
-              Spacer()
-              Button { model.pasteFromClipboard() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
-                .controlSize(.small).keyboardShortcut("v", modifiers: .command)
-                .help("Paste a copied file, image, link or text (⌘V)")
-              Button { model.addFromPicker() } label: { Label("Add", systemImage: "plus") }
-                .controlSize(.small).help("Add files from your Mac")
+
+              Spacer(minLength: 4)
+
+              compactAction("doc.on.clipboard", label: "Paste", help: "Paste from clipboard (⌘V)") {
+                model.pasteFromClipboard()
+              }
+              .keyboardShortcut("v", modifiers: .command)
+
+              compactAction("plus", label: "Add", help: "Add files from your Mac") {
+                model.addFromPicker()
+              }
+
               Button(role: .destructive) {
                 model.clear()
               } label: {
-                Label("Clear All", systemImage: "trash")
+                Image(systemName: "trash")
+                  .font(.system(size: 11.5, weight: .medium))
+                  .foregroundStyle(KitbagUI.danger)
+                  .frame(width: 24, height: 24)
+                  .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
               }
-              .controlSize(.small)
+              .buttonStyle(.plain)
+              .hoverHighlight(cornerRadius: 6, tint: KitbagUI.danger)
+              .help("Clear all items")
+              .accessibilityLabel("Clear All")
             }
-            if model.listExpanded { ItemList(model: model) }
+
+            if model.listExpanded {
+              Divider().opacity(0.45)
+              ItemList(model: model)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
           }
         }
       }
-      .card()
+      .card(padding: 12)
       .background(
-        RoundedRectangle(cornerRadius: 12)
-          .fill(Color.accentColor.opacity(model.dropTargeted ? 0.12 : 0))
+        RoundedRectangle(cornerRadius: KitbagUI.cardRadius, style: .continuous)
+          .fill(Color.accentColor.opacity(model.dropTargeted ? 0.10 : 0))
       )
       .overlay(
-        RoundedRectangle(cornerRadius: 12)
+        RoundedRectangle(cornerRadius: KitbagUI.cardRadius, style: .continuous)
           .strokeBorder(
-            model.dropTargeted ? Color.accentColor : Color.secondary.opacity(0.35),
+            model.dropTargeted
+              ? Color.accentColor
+              : (model.items.isEmpty ? Color.secondary.opacity(0.28) : Color.clear),
             style: StrokeStyle(
-              lineWidth: model.dropTargeted ? 2 : 1,
-              dash: model.items.isEmpty ? [5, 4] : []))
+              lineWidth: model.dropTargeted ? 1.75 : 1,
+              dash: model.items.isEmpty ? [5, 4] : []
+            )
+          )
       )
+      .animation(.easeOut(duration: 0.15), value: model.dropTargeted)
 
-      if !model.items.isEmpty, !model.convertFormats.isEmpty || model.converting != nil || model.pendingConvert != nil {
+      if !model.items.isEmpty,
+        !model.convertFormats.isEmpty || model.converting != nil || model.pendingConvert != nil
+      {
         ConvertRow(model: model)
       }
 
-      // Each destination app (Blip) shows its on/off switch while it is off or nothing is on the
-      // shelf; once it is on and there is something to send, only "Send with …" is shown.
       ForEach(model.senders) { sender in
         SenderSlot(sender: sender, model: model)
       }
 
       if let m = model.message {
-        Text(m).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        HStack(spacing: 6) {
+          Image(systemName: "info.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text(m)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+          Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
       }
     }
     .dropDestination(for: URL.self) { urls, _ in
@@ -101,25 +175,59 @@ struct ShelfView: View {
     }
   }
 
+  private func compactAction(
+    _ symbol: String, label: LocalizedStringKey, help: LocalizedStringKey,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      HStack(spacing: 4) {
+        Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+        Text(label).font(.caption.weight(.medium))
+      }
+      .foregroundStyle(.primary)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(
+        Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+      )
+      .hoverHighlight(cornerRadius: 6)
+      .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+    .buttonStyle(PressableStyle())
+    .help(help)
+  }
+
   private var footer: String {
-    let n = model.items.count == 1
+    let n =
+      model.items.count == 1
       ? String(localized: "1 item") : String(localized: "\(model.items.count) items")
     return model.missing.isEmpty
       ? n : n + " · " + String(localized: "\(model.missing.count) missing")
   }
 }
 
-/// Two-option pill matching the tab bar style.
+/// Two-option segmented switch with smooth sliding active indicator.
 private struct ModeSwitch: View {
   @Binding var mode: TransferMode
+  @Namespace private var ns
+  @Environment(\.colorScheme) private var scheme
 
   var body: some View {
     HStack(spacing: 2) {
-      option(.copy, "Copy", "doc.on.doc")
-      option(.move, "Move", "arrow.right.circle")
+      option(.copy, "Copy on drag", "doc.on.doc")
+      option(.move, "Move on drag", "arrow.right.circle")
     }
     .padding(3)
-    .background(.quaternary.opacity(0.6), in: Capsule())
+    .background(
+      scheme == .dark ? Color.white.opacity(0.065) : Color.black.opacity(0.05),
+      in: Capsule()
+    )
+    .overlay(
+      Capsule().strokeBorder(
+        scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
+        lineWidth: 0.5
+      )
+    )
     .accessibilityElement(children: .contain)
     .accessibilityLabel("When dropped in a folder")
   }
@@ -129,13 +237,22 @@ private struct ModeSwitch: View {
   {
     let on = mode == value
     return Button {
-      mode = value
+      withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+        mode = value
+      }
     } label: {
       Label(title, systemImage: symbol)
-        .font(.callout.weight(.medium))
+        .font(.caption.weight(.semibold))
         .foregroundStyle(on ? Color.white : Color.secondary)
-        .frame(maxWidth: .infinity, minHeight: 26)
-        .background(on ? Color.accentColor : .clear, in: Capsule())
+        .frame(maxWidth: .infinity, minHeight: 25)
+        .background {
+          if on {
+            Capsule()
+              .fill(Color.accentColor)
+              .matchedGeometryEffect(id: "shelfMode", in: ns)
+          }
+        }
+        .capsuleHoverHighlight(tint: on ? nil : Color.primary)
         .contentShape(Capsule())
     }
     .buttonStyle(.plain)
@@ -153,18 +270,21 @@ private struct StackView: View {
       ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
         let depth = shown.count - 1 - index  // 0 = top of the pile
         let side: Double = depth.isMultiple(of: 2) ? 1 : -1
-        Image(nsImage: model.icon(for: item.id, size: 72))
-          .resizable().frame(width: 72, height: 72)
+        Image(nsImage: model.icon(for: item.id, size: 70))
+          .resizable()
+          .frame(width: 70, height: 70)
           .rotationEffect(.degrees(depth == 0 ? 0 : side * Double(depth) * 7))
           .offset(x: depth == 0 ? 0 : side * Double(depth) * 9, y: Double(depth) * -4)
-          .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+          .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
       }
     }
-    .frame(maxWidth: .infinity, minHeight: 110)
+    .frame(maxWidth: .infinity, minHeight: 104)
     .overlay(alignment: .topTrailing) {
       Text("\(model.items.count)")
-        .font(.caption.bold().monospacedDigit()).foregroundStyle(.white)
-        .padding(.horizontal, 7).padding(.vertical, 2)
+        .font(.caption.bold().monospacedDigit())
+        .foregroundStyle(.white)
+        .padding(.horizontal, 7.5)
+        .padding(.vertical, 2.5)
         .background(Capsule().fill(Color.accentColor))
     }
     .overlay(DragSource(model: model))
@@ -214,7 +334,6 @@ private final class DragNSView: NSView, NSDraggingSource {
   }
 
   func draggingSession(_ s: NSDraggingSession, endedAt p: NSPoint, operation: NSDragOperation) {
-    // Moved (or trashed) by the receiver: the originals are gone. A copy clears only if configured.
     let gone = operation.contains(.move) || operation.contains(.delete)
     if gone || (model?.clearAfterDrop == true && !operation.isEmpty) {
       for id in ids { model?.remove(id) }
@@ -223,9 +342,6 @@ private final class DragNSView: NSView, NSDraggingSource {
   }
 }
 
-/// One row per destination app (Blip), always the same shape so nothing jumps: icon and name on
-/// the left, the on/off switch on the right, and a "Send" button between them once the app is on
-/// and there is something on the shelf. Files can also be dropped straight onto the row.
 private struct SenderSlot: View {
   let sender: FileSender
   @ObservedObject var model: ShelfModel
@@ -245,35 +361,50 @@ private struct SenderRow: View {
   @ObservedObject var power: SenderPower
 
   private var canSend: Bool { power.isOn && !model.items.isEmpty }
+  private var targeted: Bool { model.targetedSender == sender.id }
 
   var body: some View {
-    HStack(spacing: 8) {
-      sender.icon().frame(width: 20, height: 20)
-      VStack(alignment: .leading, spacing: 0) {
+    HStack(spacing: 9) {
+      sender.icon().frame(width: 22, height: 22)
+      VStack(alignment: .leading, spacing: 1) {
         Text(sender.title).font(.callout.weight(.medium))
-        Text(power.isBusy ? "Working…" : (power.isOn ? "On" : "Off"))
-          .font(.caption2).foregroundStyle(power.isOn ? Color.green : .secondary)
+        HStack(spacing: 4) {
+          StatusDot(
+            color: power.isBusy ? KitbagUI.warning : (power.isOn ? KitbagUI.success : .secondary),
+            active: power.isOn && !power.isBusy,
+            size: 5.5
+          )
+          Text(power.isBusy ? "Working…" : (power.isOn ? "Ready" : "Off"))
+            .font(.caption2)
+            .foregroundStyle(power.isOn ? KitbagUI.success : .secondary)
+        }
       }
       Spacer(minLength: 6)
       if canSend {
-        Button { model.send(with: sender) } label: {
-          Label("Send", systemImage: "paperplane.fill").font(.callout.weight(.medium))
+        Button {
+          model.send(with: sender)
+        } label: {
+          Label("Send", systemImage: "paperplane.fill")
+            .font(.caption.weight(.semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 12).padding(.vertical, 4)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
             .background(Color.accentColor, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .help("Send the shelf with \(sender.title)")
       }
       if power.isBusy { ProgressView().controlSize(.small) }
       Toggle("\(sender.title) service", isOn: Binding(get: { power.isOn }, set: { power.set($0) }))
-        .labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(power.isBusy)
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .disabled(power.isBusy)
     }
-    .padding(.horizontal, 10).padding(.vertical, 7)
-    .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 12).strokeBorder(
-        Color.accentColor, lineWidth: model.targetedSender == sender.id ? 2 : 0)
+    .card(
+      padding: 10,
+      borderColor: targeted ? Color.accentColor : nil,
+      borderWidth: 1.75
     )
     .dropDestination(for: URL.self) { urls, _ in
       model.send(with: sender, urls: urls)
@@ -282,35 +413,38 @@ private struct SenderRow: View {
     } isTargeted: {
       model.targetedSender = $0 ? sender.id : nil
     }
-    .animation(.default, value: canSend)
+    .animation(.easeOut(duration: 0.16), value: canSend)
   }
 }
 
-/// "Send with X" for destinations that have no on/off switch.
 private struct PlainSenderButton: View {
   let sender: FileSender
   @ObservedObject var model: ShelfModel
+
+  private var targeted: Bool { model.targetedSender == sender.id }
 
   var body: some View {
     Button {
       model.send(with: sender)
     } label: {
-      HStack(spacing: 8) {
-        sender.icon().frame(width: 20, height: 20)
-        Text("Send with \(sender.title)").font(.callout)
+      HStack(spacing: 9) {
+        sender.icon().frame(width: 22, height: 22)
+        Text("Send with \(sender.title)").font(.callout.weight(.medium))
         Spacer()
-        Image(systemName: "paperplane").foregroundStyle(.secondary)
+        Image(systemName: "paperplane.fill")
+          .font(.caption)
+          .foregroundStyle(Color.accentColor)
       }
       .frame(maxWidth: .infinity)
       .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
-    .padding(.horizontal, 10).padding(.vertical, 7)
-    .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 12).strokeBorder(
-        Color.accentColor, lineWidth: model.targetedSender == sender.id ? 2 : 0)
+    .buttonStyle(PressableStyle())
+    .card(
+      padding: 10,
+      borderColor: targeted ? Color.accentColor : nil,
+      borderWidth: 1.75
     )
+    .hoverHighlight(cornerRadius: KitbagUI.cardRadius)
     .dropDestination(for: URL.self) { urls, _ in
       model.send(with: sender, urls: urls)
       NotificationCenter.default.post(name: .kitbagFileDropFinished, object: nil)
@@ -321,9 +455,6 @@ private struct PlainSenderButton: View {
   }
 }
 
-/// "Convert to" with one button per format that fits what is on the shelf. Tapping one shows what
-/// will happen (sizes before and after) and asks where to save. While a conversion runs it becomes
-/// a progress bar with a Cancel button.
 private struct ConvertRow: View {
   @ObservedObject var model: ShelfModel
 
@@ -337,25 +468,37 @@ private struct ConvertRow: View {
         picker
       }
     }
-    .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    .animation(.default, value: model.pendingConvert)
+    .card(padding: 11)
+    .animation(.easeOut(duration: 0.16), value: model.pendingConvert)
   }
 
   // MARK: Step 1: pick a format
 
   private var picker: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Label("Convert to", systemImage: "arrow.triangle.2.circlepath")
-        .font(.callout.weight(.semibold)).lineLimit(1)
+    VStack(alignment: .leading, spacing: 9) {
+      HStack(spacing: 5) {
+        Image(systemName: "arrow.triangle.2.circlepath")
+          .font(.system(size: 10.5, weight: .semibold))
+          .foregroundStyle(.secondary)
+        SectionEyebrow("Convert & Optimize")
+      }
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 58), spacing: 6)], spacing: 6) {
         ForEach(model.convertFormats) { f in
-          Button { model.requestConvert(.format(f)) } label: {
-            Text(f.label).font(.callout.weight(.semibold))
-              .frame(maxWidth: .infinity).padding(.vertical, 7)
-              .background(Color.accentColor.opacity(0.2), in: Capsule())
-              .contentShape(Capsule())
+          Button {
+            model.requestConvert(.format(f))
+          } label: {
+            Text(f.label)
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(Color.accentColor)
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, 6.5)
+              .background(
+                Color.accentColor.opacity(0.14),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+              )
+              .hoverHighlight(cornerRadius: 8, tint: Color.accentColor)
+              .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
           }
           .buttonStyle(PressableStyle())
           .help("Convert to \(f.label)")
@@ -363,28 +506,33 @@ private struct ConvertRow: View {
       }
       if model.canOptimize {
         HStack(spacing: 6) {
-          action("Compress", "arrow.down.right.and.arrow.up.left") { model.requestConvert(.compress) }
-          action("Remove data", "eye.slash") { model.requestConvert(.cleanOnly) }
+          action("Compress", "arrow.down.right.and.arrow.up.left") {
+            model.requestConvert(.compress)
+          }
+          action("Clean Metadata", "eye.slash") { model.requestConvert(.cleanOnly) }
         }
       }
       if model.canMerge {
-        Button { model.requestConvert(.mergePDF) } label: {
-          Label("Combine into one PDF", systemImage: "doc.on.doc.fill")
-            .font(.callout.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 7)
-            .background(Color.primary.opacity(0.08), in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
+        action("Combine into One PDF", "doc.on.doc.fill") { model.requestConvert(.mergePDF) }
       }
     }
   }
 
-  private func action(_ title: LocalizedStringKey, _ symbol: String, run: @escaping () -> Void) -> some View {
+  private func action(_ title: LocalizedStringKey, _ symbol: String, run: @escaping () -> Void)
+    -> some View
+  {
     Button(action: run) {
-      Label(title, systemImage: symbol).font(.callout.weight(.medium)).lineLimit(1)
-        .frame(maxWidth: .infinity).padding(.vertical, 7)
-        .background(Color.primary.opacity(0.1), in: Capsule())
-        .contentShape(Capsule())
+      Label(title, systemImage: symbol)
+        .font(.caption.weight(.medium))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6.5)
+        .background(
+          Color.primary.opacity(0.07),
+          in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .hoverHighlight(cornerRadius: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .buttonStyle(PressableStyle())
   }
@@ -396,57 +544,73 @@ private struct ConvertRow: View {
     let sameFormat = request == .compress || request == .cleanOnly
     let compressing = model.compressEnabled && showsCompress(request)
     let nothingToDo = sameFormat && !model.compressEnabled && !model.cleanEnabled
-    return VStack(alignment: .leading, spacing: 10) {
+    return VStack(alignment: .leading, spacing: 9) {
       HStack {
         Text(heading(request)).font(.callout.weight(.semibold)).lineLimit(1)
         Spacer()
-        Button("Cancel") { model.cancelRequest() }.controlSize(.small).buttonStyle(.borderless)
+        Button("Cancel") { model.cancelRequest() }
+          .controlSize(.small)
+          .buttonStyle(.borderless)
       }
       SizeComparison(rows: model.estimateRows, estimating: model.estimating)
       if showsCompress(request) {
-        Toggle("Compress", isOn: $model.compressEnabled).toggleStyle(.checkbox).font(.callout)
+        Toggle("Compress", isOn: $model.compressEnabled)
+          .toggleStyle(.checkbox)
+          .font(.callout)
         if compressing {
           Picker("Strength", selection: $model.compressLevel) {
             ForEach(CompressLevel.allCases) { Text($0.label).tag($0) }
           }
-          .pickerStyle(.segmented).labelsHidden()
+          .pickerStyle(.segmented)
+          .labelsHidden()
         }
       }
       if sameFormat {
-        Toggle("Remove hidden data", isOn: $model.cleanEnabled).toggleStyle(.checkbox).font(.callout)
-          .help("Camera info, location and AI details such as prompts and content credentials")
+        Toggle("Remove hidden metadata", isOn: $model.cleanEnabled)
+          .toggleStyle(.checkbox)
+          .font(.callout)
+          .help("Camera info, GPS location, and AI details such as prompts and content credentials")
       } else if plan.hasMetadata {
-        Toggle("Remove hidden data", isOn: $model.stripMetadata).toggleStyle(.checkbox).font(.callout)
-          .help("Camera info, location and AI details such as prompts and content credentials")
+        Toggle("Remove hidden metadata", isOn: $model.stripMetadata)
+          .toggleStyle(.checkbox)
+          .font(.callout)
+          .help("Camera info, GPS location, and AI details such as prompts and content credentials")
       }
-      VStack(spacing: 8) {
-        HStack(spacing: 8) {
-          choice("Original location", "folder") { model.runPending(saveTo: .original) }
-          choice("Choose folder…", "folder.badge.plus") { model.chooseFolderAndRun() }
+      VStack(spacing: 6) {
+        HStack(spacing: 6) {
+          choice("Save Next to Original", "folder", prominent: true) {
+            model.runPending(saveTo: .original)
+          }
+          choice("Choose Folder…", "folder.badge.plus") { model.chooseFolderAndRun() }
         }
         if sameFormat {
-          choice("Replace originals", "arrow.triangle.2.circlepath") { model.runPending(saveTo: .replace) }
+          choice("Replace Originals", "arrow.triangle.2.circlepath") {
+            model.runPending(saveTo: .replace)
+          }
         }
       }
       .disabled(nothingToDo)
-      .opacity(nothingToDo ? 0.5 : 1)
+      .opacity(nothingToDo ? 0.45 : 1)
     }
   }
 
-  /// Compressing only means something for images and PDFs.
   private func showsCompress(_ r: ConvertRequest) -> Bool {
     if case .format(let f) = r { return f.supportsCompress }
     return r != .mergePDF
   }
 
   private func progress(_ p: ConvertProgress) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 10) {
-        ProgressView(value: Double(p.done), total: Double(max(p.total, 1)))
-        Text("\(p.done) of \(p.total)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-        Button("Cancel") { model.cancelConvert() }.controlSize(.small)
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Text("Converting to \(p.title)…").font(.callout.weight(.medium))
+        Spacer()
+        Text("\(p.done) / \(p.total)")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.secondary)
+        Button("Cancel") { model.cancelConvert() }
+          .controlSize(.mini)
       }
-      Text("Converting to \(p.title)…").font(.caption).foregroundStyle(.secondary)
+      ProgressView(value: Double(p.done), total: Double(max(p.total, 1)))
     }
   }
 
@@ -456,26 +620,36 @@ private struct ConvertRow: View {
     case .mergePDF: return String(localized: "Combine into one PDF")
     case .compress, .cleanOnly:
       switch (model.compressEnabled, model.cleanEnabled) {
-      case (true, true): return String(localized: "Compress and remove data")
-      case (false, true): return String(localized: "Remove hidden data")
+      case (true, true): return String(localized: "Compress & clean metadata")
+      case (false, true): return String(localized: "Remove hidden metadata")
       case (true, false): return String(localized: "Compress")
-      default: return String(localized: "Choose what to do")
+      default: return String(localized: "Choose an action")
       }
     }
   }
 
-  private func choice(_ title: LocalizedStringKey, _ symbol: String, action: @escaping () -> Void) -> some View {
+  private func choice(
+    _ title: LocalizedStringKey, _ symbol: String, prominent: Bool = false,
+    action: @escaping () -> Void
+  ) -> some View {
     Button(action: action) {
-      Label(title, systemImage: symbol).font(.callout.weight(.medium)).lineLimit(1)
-        .frame(maxWidth: .infinity).padding(.vertical, 8)
-        .background(Color.accentColor.opacity(0.2), in: Capsule())
-        .contentShape(Capsule())
+      Label(title, systemImage: symbol)
+        .font(.caption.weight(.semibold))
+        .lineLimit(1)
+        .foregroundStyle(prominent ? Color.white : Color.primary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(
+          prominent ? Color.accentColor : Color.primary.opacity(0.08),
+          in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .hoverHighlight(cornerRadius: 8, tint: prominent ? .white : nil)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .buttonStyle(PressableStyle())
   }
 }
 
-/// Total size now and after converting, with the saving.
 private struct SizeComparison: View {
   let rows: [EstimateRow]
   let estimating: Bool
@@ -494,13 +668,22 @@ private struct SizeComparison: View {
     let after = done.compactMap(\.after).reduce(0, +)
     HStack(spacing: 6) {
       if done.isEmpty {
-        if estimating { ProgressView().controlSize(.small) }
-        Text(estimating ? "Working out sizes…" : "Size can't be estimated")
-          .font(.caption).foregroundStyle(.secondary)
+        if estimating { ProgressView().controlSize(.mini) }
+        Text(estimating ? "Estimating output size…" : "Size estimate unavailable")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       } else {
-        Text("\(bytes(before)) → \(bytes(after))").font(.callout.weight(.semibold).monospacedDigit())
+        Text("\(bytes(before)) → \(bytes(after))")
+          .font(.caption.weight(.semibold).monospacedDigit())
         let c = ShelfFormat.change(before, after)
-        Text(c.text).font(.caption.weight(.semibold)).foregroundStyle(c.color)
+        if !c.text.isEmpty {
+          Text(c.text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(c.color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(c.color.opacity(0.14), in: Capsule())
+        }
         if estimating { ProgressView().controlSize(.mini) }
       }
     }
@@ -521,11 +704,11 @@ enum ShelfFormat {
     let pct = Int((Double(after - before) / Double(before) * 100).rounded())
     if pct == 0 { return (String(localized: "same size"), .secondary) }
     return pct < 0
-      ? (String(localized: "\(-pct)% smaller"), .green) : (String(localized: "\(pct)% larger"), .orange)
+      ? (String(localized: "\(-pct)% smaller"), KitbagUI.success)
+      : (String(localized: "\(pct)% larger"), KitbagUI.warning)
   }
 }
 
-/// Every file on the shelf, with its size (or before → after while converting) and a remove button.
 private struct ItemList: View {
   @ObservedObject var model: ShelfModel
 
@@ -536,22 +719,39 @@ private struct ItemList: View {
           let missing = model.missing.contains(item.id)
           let est = model.estimateRows.first { $0.id == item.id }
           HStack(spacing: 8) {
-            Image(nsImage: model.icon(for: item.id, size: 18)).resizable().frame(width: 18, height: 18)
-            Text(item.name).font(.caption).lineLimit(1).truncationMode(.middle)
+            Image(nsImage: model.icon(for: item.id, size: 18))
+              .resizable()
+              .frame(width: 18, height: 18)
+            Text(item.name)
+              .font(.caption)
+              .lineLimit(1)
+              .truncationMode(.middle)
             Spacer(minLength: 6)
             if missing {
-              Text("missing").font(.caption2).foregroundStyle(.red)
+              Text("missing").font(.caption2.weight(.medium)).foregroundStyle(KitbagUI.danger)
             } else if let est, let after = est.after {
               Text("\(ShelfFormat.bytes(est.before)) → \(ShelfFormat.bytes(after))")
-                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
             } else if let size = model.fileSize(for: item.id) {
-              Text(ShelfFormat.bytes(size)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+              Text(ShelfFormat.bytes(size))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
             }
-            Button { model.remove(item.id) } label: { Image(systemName: "xmark.circle.fill") }
-              .buttonStyle(.plain).foregroundStyle(.tertiary).help("Remove from the shelf")
-              .accessibilityLabel("Remove \(item.name)")
+            Button {
+              model.remove(item.id)
+            } label: {
+              Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tertiary)
+            .help("Remove from the shelf")
+            .accessibilityLabel("Remove \(item.name)")
           }
-          .padding(.vertical, 2)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 4)
+          .hoverHighlight(cornerRadius: 6)
         }
       }
     }
