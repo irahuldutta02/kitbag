@@ -7,6 +7,17 @@ struct AuthenticatorSettingsView: View {
   @ObservedObject var model: AuthenticatorModel
 
   var body: some View {
+    Section {
+      ShortcutRecorderRow(
+        "Open Authenticator", current: model.shortcut,
+        defaultShortcut: AuthenticatorModel.defaultShortcut,
+        onPause: { model.pauseHotKey($0) }, onSet: { model.setShortcut($0) })
+    } header: {
+      Text("Shortcut")
+    } footer: {
+      Text("Press it anywhere to open Authenticator with the search field ready. Return copies the first match.")
+    }
+
     Section("Accounts") {
       HStack {
         Text(model.entries.count == 1 ? "1 account" : "\(model.entries.count) accounts")

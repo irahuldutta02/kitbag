@@ -99,6 +99,10 @@ struct SettingsView: View {
             Image(systemName: "antenna.radiowaves.left.and.right")
               .font(.system(size: 11.5, weight: .semibold))
           }
+          row(id: "providers", title: Text("Providers"), tint: .indigo, enabledDot: nil) {
+            Image(systemName: "cpu")
+              .font(.system(size: 11.5, weight: .semibold))
+          }
         }
       }
       .scrollIndicators(.hidden)
@@ -174,6 +178,15 @@ struct SettingsView: View {
   private var detail: some View {
     VStack(spacing: 0) {
       Spacer().frame(height: 36)  // title bar area; each page has its own header card
+      if nav.page == "providers" {
+        ScrollView {
+          ProvidersSettingsView(manager: ProviderManager.shared)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .overlay(alignment: .bottom) { ToastOverlay() }
+      } else {
       Form {
         if nav.page == "connectivity" {
           ConnectivityPage()
@@ -195,6 +208,7 @@ struct SettingsView: View {
       .scrollContentBackground(.hidden)
       .overlay(alignment: .bottom) { ToastOverlay() }
       .animation(.easeInOut(duration: 0.2), value: Toast.shared.message)
+      }
 
       if terminal.isOpen {
         Divider()
@@ -238,7 +252,7 @@ enum Look {
   ]
 
   /// Tools whose settings view builds its own sections instead of one options section.
-  static let ownSections: Set<String> = ["dictation", "authenticator"]
+  static let ownSections: Set<String> = ["dictation", "authenticator", "apps"]
 
   static let optionsTitle: [String: LocalizedStringKey] = [
     "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Runtimes & Services",

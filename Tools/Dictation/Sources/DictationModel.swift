@@ -16,11 +16,10 @@ final class DictationModel: ObservableObject {
   let settings = DictationSettings()
   @Published private(set) var phase: Phase = .idle
   @Published private(set) var lastText = ""
-  @Published private(set) var claudePath: String?
-  @Published var installing = false
-  @Published var installLog = ""
-  @Published var installError: String?
   @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
+  /// True while a run started from the settings test box is in progress.
+  @Published private(set) var testing = false
+  private var testSink: ((String) -> Void)?
 
   lazy var local = LocalSetup(settings: settings)
   private let appleCapture = SpeechCapture()
@@ -94,7 +93,7 @@ final class DictationModel: ObservableObject {
   }
 
   func refreshStatus() {
-    claudePath = ClaudeCLI.locate()
+    ProviderManager.shared.refreshAll()
     local.refresh()
     let granted = AXIsProcessTrusted()
     if granted && !accessibilityGranted { _ = registerHotKey() }  // the Globe key can be heard now
@@ -159,6 +158,20 @@ final class DictationModel: ObservableObject {
     }
   }
 
+  /// Start/stop from the test box in settings: the text goes to `sink` instead of being pasted elsewhere.
+  func toggleTest(_ sink: @escaping (String) -> Void) {
+    if phase == .idle && !starting {
+      testSink = sink
+      testing = true
+    }
+    toggle()
+  }
+
+  private func endTest() {
+    testSink = nil
+    testing = false
+  }
+
   func toggle() {
     fnTriggered = false
     switch phase {
@@ -173,7 +186,10 @@ final class DictationModel: ObservableObject {
     starting = true
     hideTask?.cancel()
     Task {
-      defer { starting = false }
+      defer {
+        starting = false
+        if phase != .listening { endTest() }
+      }
       local.refresh()
       let useWhisper = settings.engine == "whisper"
       if useWhisper && (local.whisperBinary == nil || !local.whisperModelReady) {
@@ -220,6 +236,8 @@ final class DictationModel: ObservableObject {
 
   private func finish() {
     locked = false
+    let sink = testSink
+    endTest()
     phase = .processing
     escKey.unregister()
     overlay.state.mode = .processing
@@ -236,11 +254,13 @@ final class DictationModel: ObservableObject {
       var note: String?
       var usage: ClaudeCLI.Usage?
       var usedModel: String?
+      let prompt = settings.effectivePrompt
       switch settings.provider {
       case "claude":
-        if let cli = ClaudeCLI.locate() {
+        if let cli = ProviderManager.shared.effectiveBinaryPath(for: .claude) {
           do {
-            let r = try await ClaudeCLI.refine(raw, model: settings.model, effort: settings.effort, cli: cli)
+            let r = try await ClaudeCLI.refine(
+              raw, model: settings.model, effort: settings.effort, prompt: prompt, cli: cli)
             text = r.text
             usage = r.usage
             usedModel = settings.model
@@ -250,10 +270,38 @@ final class DictationModel: ObservableObject {
         } else {
           note = String(localized: "Claude Code isn't installed, pasted as spoken")
         }
+      case "antigravity":
+        if let cli = ProviderManager.shared.effectiveBinaryPath(for: .antigravity) {
+          do {
+            let r = try await AntigravityCLI.refine(
+              raw, model: settings.agyModel, effort: settings.agyEffort, prompt: prompt, cli: cli)
+            text = r.text
+            usage = r.usage
+            usedModel = settings.agyModel
+          } catch {
+            note = String(localized: "Antigravity couldn't clean it up, pasted as spoken")
+          }
+        } else {
+          note = String(localized: "Antigravity isn't installed, pasted as spoken")
+        }
+      case "codex":
+        if let cli = ProviderManager.shared.effectiveBinaryPath(for: .codex) {
+          do {
+            let r = try await CodexCLI.refine(
+              raw, model: settings.codexModel, effort: settings.codexEffort, prompt: prompt, cli: cli)
+            text = r.text
+            usage = r.usage
+            usedModel = settings.codexModel.isEmpty ? "codex" : settings.codexModel
+          } catch {
+            note = String(localized: "Codex couldn't clean it up, pasted as spoken")
+          }
+        } else {
+          note = String(localized: "Codex isn't installed, pasted as spoken")
+        }
       case "gemma":
         if await local.ensureServer() {
           do {
-            let r = try await OllamaClient.refine(raw, model: settings.gemmaModel)
+            let r = try await OllamaClient.refine(raw, model: settings.gemmaModel, prompt: prompt)
             text = r.text
             usage = r.usage
             usedModel = settings.gemmaModel
@@ -264,6 +312,12 @@ final class DictationModel: ObservableObject {
           note = String(localized: "Ollama isn't running, pasted as spoken")
         }
       default: break
+      }
+      if let sink {
+        phase = .idle
+        sink(text)
+        if let note { flash(note, error: true) } else { overlay.hide() }
+        return
       }
       lastText = text
       phase = .idle
@@ -291,6 +345,7 @@ final class DictationModel: ObservableObject {
     silencer.restore()
     phase = .idle
     overlay.hide()
+    endTest()
   }
 
   private func flash(_ text: String, error: Bool) {
@@ -333,24 +388,6 @@ final class DictationModel: ObservableObject {
   }
 
   // MARK: Settings actions
-
-  func installClaude() {
-    guard
-      Shell.confirm(
-        String(localized: "Install Claude Code?"),
-        String(localized: "Kitbag will run Anthropic's installer:\n\(ClaudeCLI.installCommand)"),
-        action: String(localized: "Install"))
-    else { return }
-    installing = true
-    installError = nil
-    installLog = ""
-    Task { [weak self] in
-      guard let self else { return }
-      installError = await ClaudeCLI.install { [weak self] in self?.installLog += $0 }
-      installing = false
-      refreshStatus()
-    }
-  }
 
   func openKeyboardSettings() {
     if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {

@@ -6,7 +6,7 @@ import SwiftUI
 public final class DictationTool: KitbagTool {
   public static let descriptor = ToolDescriptor(
     id: "dictation", name: "Dictation", symbol: "mic.fill", defaultEnabled: false,
-    showsMenuTab: false, listedInApps: true, make: { DictationTool() })
+    showsMenuTab: false, listedInApps: true, appsCategory: "dictation", make: { DictationTool() })
 
   private var model: DictationModel?
   public init() {}

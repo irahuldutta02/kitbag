@@ -19,7 +19,12 @@ struct AuthenticatorView: View {
     let list = model.filtered(ui.query)
     VStack(alignment: .leading, spacing: 9) {
       HStack(spacing: 8) {
-        SearchFieldBar("Search accounts…", text: $ui.query)
+        SearchFieldBar(
+          "Search accounts…", text: $ui.query, autoFocus: true,
+          plainPlaceholder: String(localized: "Search accounts…")
+        ) {
+          if let first = model.filtered(ui.query).first { model.copyCode(first) }
+        }
         Button {
           withAnimation(.spring(response: 0.24, dampingFraction: 0.85)) { ui.adding.toggle() }
         } label: {
@@ -49,6 +54,12 @@ struct AuthenticatorView: View {
         Label(err, systemImage: "exclamationmark.triangle.fill")
           .font(.caption)
           .foregroundStyle(KitbagUI.danger)
+      }
+
+      if model.shortcut != nil, !model.shortcutWorks {
+        Label("Shortcut is taken by another app.", systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(KitbagUI.warning)
       }
 
       if model.entries.isEmpty {
@@ -100,6 +111,7 @@ struct AuthenticatorView: View {
           Text(model.entries.count == 1 ? "1 account" : "\(model.entries.count) accounts")
           Spacer()
           Text("Click any card to copy")
+          if let s = model.shortcut { KeycapBadge(s.display) }
         }
         .font(.caption)
         .foregroundStyle(.secondary)

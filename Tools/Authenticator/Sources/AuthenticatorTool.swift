@@ -18,6 +18,7 @@ public final class AuthenticatorTool: KitbagTool {
 
   public func stop() {
     EntryEditor.close()
+    model?.stop()
     model = nil
   }
 

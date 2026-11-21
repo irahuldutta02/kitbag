@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import KitbagCore
 
 /// The list of accounts: kept in the Keychain, searchable, with codes copied to the clipboard
@@ -20,6 +21,17 @@ final class AuthenticatorModel: ObservableObject {
   /// Accounts changed since the last backup.
   @Published private(set) var needsBackup: Bool
 
+  /// The key combination that opens the Authenticator tab anywhere; `nil` when turned off.
+  @Published private(set) var shortcut: KeyShortcut?
+  /// False if another app already owns the shortcut.
+  @Published private(set) var shortcutWorks = true
+
+  static let defaultShortcut = KeyShortcut(
+    keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(cmdKey | optionKey), label: "A")
+  private static let shortcutPrefix = "kitbag.auth.shortcut"
+  private let hotKey = GlobalHotKey()
+  private var hotKeyEnabled = false
+
   private static let clearKey = "kitbag.auth.clearAfterCopy"
   private static let backupKey = "kitbag.auth.lastBackup"
   private static let dirtyKey = "kitbag.auth.dirty"
@@ -40,9 +52,18 @@ final class AuthenticatorModel: ObservableObject {
     clearAfterCopy = (defaults.object(forKey: Self.clearKey) as? Bool) ?? true
     lastBackup = defaults.object(forKey: Self.backupKey) as? Date
     needsBackup = defaults.bool(forKey: Self.dirtyKey)
+    shortcut = KeyShortcut.load(from: defaults, prefix: Self.shortcutPrefix, default: Self.defaultShortcut)
   }
 
-  func start() {
+  /// `registerHotKey: false` skips the global shortcut (tests).
+  func start(registerHotKey: Bool = true) {
+    if registerHotKey {
+      hotKeyEnabled = true
+      hotKey.onPress = {
+        NotificationCenter.default.post(name: .kitbagOpenTab, object: "authenticator")
+      }
+      registerShortcut()
+    }
     do {
       if let data = try storage.load() { entries = try Backup.makeDecoder().decode([AuthEntry].self, from: data) }
       loaded = true
@@ -51,6 +72,46 @@ final class AuthenticatorModel: ObservableObject {
       loaded = false
       storageError = "Couldn't open your accounts. \(error.localizedDescription)"
     }
+  }
+
+  func stop() {
+    hotKey.unregister()
+    hotKeyEnabled = false
+  }
+
+  // MARK: Shortcut
+
+  private func registerShortcut() {
+    guard let s = shortcut else {
+      hotKey.unregister()
+      shortcutWorks = true
+      return
+    }
+    shortcutWorks = hotKey.register(keyCode: s.keyCode, modifiers: s.modifiers)
+  }
+
+  /// Switches to a new shortcut (or turns it off with `nil`). If another app already owns it,
+  /// the old one stays and this returns false.
+  @discardableResult
+  func setShortcut(_ new: KeyShortcut?) -> Bool {
+    if hotKeyEnabled, let new {
+      guard hotKey.register(keyCode: new.keyCode, modifiers: new.modifiers) else {
+        if let old = shortcut { hotKey.register(keyCode: old.keyCode, modifiers: old.modifiers) }
+        return false
+      }
+    } else if hotKeyEnabled {
+      hotKey.unregister()
+    }
+    shortcut = new
+    shortcutWorks = true
+    KeyShortcut.save(new, to: defaults, prefix: Self.shortcutPrefix)
+    return true
+  }
+
+  /// While a new shortcut is being typed, the current one must not fire.
+  func pauseHotKey(_ pause: Bool) {
+    guard hotKeyEnabled else { return }
+    if pause { hotKey.unregister() } else { registerShortcut() }
   }
 
   // MARK: Reading

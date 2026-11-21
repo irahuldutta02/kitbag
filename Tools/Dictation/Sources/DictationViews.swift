@@ -108,6 +108,8 @@ struct DictationView: View {
 @MainActor private final class SetupDisclosure: ObservableObject {
   @Published var whisper = false
   @Published var gemma = false
+  @Published var prompt = false
+  @Published var test = false
   @Published var initialized = false
 }
 
@@ -156,6 +158,8 @@ struct DictationSettingsView: View {
   @ObservedObject var local: LocalSetup
   @StateObject private var picker = ShortcutPicker()
   @StateObject private var ui = SetupDisclosure()
+  @ObservedObject private var providers = ProviderManager.shared
+  @StateObject private var testBox = UIBox("")
 
   var body: some View {
     if let e = local.error {
@@ -172,6 +176,8 @@ struct DictationSettingsView: View {
     shortcutSection
     speechSection
     cleanupSection
+    promptSection
+    testSection
     permissionsSection
     statisticsSection
   }
@@ -229,6 +235,7 @@ struct DictationSettingsView: View {
       .labelsHidden()
       .onAppear {
         local.refresh()
+        if providers.lastChecked == nil { providers.refreshAll() }
         if !ui.initialized {
           ui.whisper = !whisperReady
           ui.gemma = !gemmaReady
@@ -339,6 +346,8 @@ struct DictationSettingsView: View {
     Section {
       Picker("Cleanup", selection: $settings.provider) {
         Text("Claude").tag("claude")
+        Text("Antigravity").tag("antigravity")
+        Text("Codex").tag("codex")
         Text("Gemma").tag("gemma")
         Text("Off").tag("off")
       }
@@ -347,25 +356,32 @@ struct DictationSettingsView: View {
 
       switch settings.provider {
       case "claude":
-        status(ready: model.claudePath != nil, ok: "Ready", todo: "Claude Code isn't installed")
+        providerStatus(.claude)
         Picker("Model", selection: $settings.model) {
           ForEach(DictationSettings.models) { Text($0.name).tag($0.id) }
         }
         Picker("Effort", selection: $settings.effort) {
           ForEach(DictationSettings.efforts) { Text($0.name).tag($0.id) }
         }
-        if model.claudePath == nil {
-          LabeledContent("Claude Code") {
-            if model.installing {
-              ProgressView().controlSize(.small)
-            } else {
-              Button("Install") { model.installClaude() }.controlSize(.small)
-            }
-          }
-          if let e = model.installError {
-            Text(e).font(.caption).foregroundStyle(KitbagUI.danger)
-          }
+        providerActions(.claude)
+      case "antigravity":
+        providerStatus(.antigravity)
+        Picker("Model", selection: $settings.agyModel) {
+          ForEach(DictationSettings.agyModels) { Text($0.name).tag($0.id) }
         }
+        Picker("Effort", selection: $settings.agyEffort) {
+          ForEach(DictationSettings.simpleEfforts) { Text($0.name).tag($0.id) }
+        }
+        providerActions(.antigravity)
+      case "codex":
+        providerStatus(.codex)
+        Picker("Model", selection: $settings.codexModel) {
+          ForEach(DictationSettings.codexModels) { Text($0.name).tag($0.id) }
+        }
+        Picker("Effort", selection: $settings.codexEffort) {
+          ForEach(DictationSettings.simpleEfforts) { Text($0.name).tag($0.id) }
+        }
+        providerActions(.codex)
       case "gemma":
         status(ready: gemmaReady, ok: "Ready · runs on this Mac", todo: "Finish setup below")
         DisclosureGroup("Gemma setup", isExpanded: $ui.gemma) { gemmaRows }
@@ -380,6 +396,142 @@ struct DictationSettingsView: View {
           "Removes filler words and fixes punctuation while keeping the language and terms you spoke."
         )
       }
+    }
+  }
+
+  // MARK: Provider status and actions (Claude, Antigravity, Codex)
+
+  private func providerStatus(_ id: AIProviderID) -> some View {
+    let st = providers.state(id)
+    let ready = st.installed && st.authenticated
+    return HStack(spacing: 8) {
+      Image(systemName: ready ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+        .foregroundStyle(ready ? KitbagUI.success : KitbagUI.warning)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(st.installed ? st.authSummary : "\(id.displayName) isn't installed")
+          .font(.callout.weight(.medium))
+        if st.installed, let v = st.version {
+          Text("\(id.binaryName) \(v)").font(.caption).foregroundStyle(.secondary)
+        }
+      }
+      Spacer()
+    }
+  }
+
+  @ViewBuilder private func providerActions(_ id: AIProviderID) -> some View {
+    let st = providers.state(id)
+    LabeledContent(id.displayName) {
+      HStack(spacing: 8) {
+        if let busy = st.busyAction {
+          ProgressView().controlSize(.small)
+          Text(busy).font(.caption).foregroundStyle(.secondary)
+        } else if !st.installed {
+          Button("Install") { providers.install(id) }.controlSize(.small)
+        } else {
+          if !st.authenticated { Button("Sign in") { providers.signIn(id) }.controlSize(.small) }
+          Button("Update") { providers.update(id) }.controlSize(.small)
+        }
+        Button("Manage Providers…") {
+          NotificationCenter.default.post(name: .kitbagOpenSettings, object: "providers")
+        }
+        .controlSize(.small)
+      }
+    }
+    if let e = st.error {
+      HStack {
+        Text(e).font(.caption).foregroundStyle(KitbagUI.danger)
+        Spacer()
+        Button("Dismiss") { providers.dismissError(id) }.controlSize(.mini)
+      }
+    }
+  }
+
+  // MARK: Editable clean-up prompt
+
+  @ViewBuilder private var promptSection: some View {
+    if settings.provider != "off" {
+      Section {
+        DisclosureGroup(isExpanded: $ui.prompt) {
+          TextEditor(text: $settings.cleanupPrompt)
+            .font(.system(size: 12, design: .monospaced))
+            .scrollContentBackground(.hidden)
+            .padding(6)
+            .frame(height: 160)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+              RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
+            )
+          HStack {
+            Text("Sent to the model with every dictation. Keep the <transcript> convention.")
+              .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Reset to Default") { settings.resetPrompt() }
+              .controlSize(.small)
+              .disabled(!settings.isCustomPrompt)
+          }
+        } label: {
+          HStack(spacing: 8) {
+            Text("Edit prompt")
+            if settings.isCustomPrompt {
+              Text("Customized")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 6.5).padding(.vertical, 2)
+                .background(Color.accentColor.opacity(0.14), in: Capsule())
+            }
+          }
+        }
+      } header: {
+        Text("Clean-up Prompt")
+      }
+    }
+  }
+
+  // MARK: Test box
+
+  @ViewBuilder private var testSection: some View {
+    Section {
+      DisclosureGroup("Test dictation", isExpanded: $ui.test) {
+        TextEditor(text: $testBox.value)
+          .font(.system(size: 13))
+          .scrollContentBackground(.hidden)
+          .padding(6)
+          .frame(height: 110)
+          .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+              .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
+          )
+        HStack {
+          Text(testHint).font(.caption).foregroundStyle(.secondary)
+          Spacer()
+          Button("Clear") { testBox.value = "" }
+            .controlSize(.small)
+            .disabled(testBox.value.isEmpty)
+          Button(model.phase == .listening ? "Stop" : "Start") {
+            let box = testBox
+            model.toggleTest { result in
+              let sep = box.value.isEmpty || box.value.hasSuffix("\n") ? "" : " "
+              box.value += sep + result
+            }
+          }
+          .disabled(model.phase == .processing)
+          .buttonStyle(.borderedProminent)
+          .tint(model.phase == .listening ? KitbagUI.danger : Color.accentColor)
+          .controlSize(.small)
+        }
+      }
+    } header: {
+      Text("Test")
+    }
+  }
+
+  private var testHint: LocalizedStringKey {
+    switch model.phase {
+    case .idle: return "Press Start, speak, then press Stop. Uses your current settings."
+    case .listening: return "Listening… press Stop when you're done."
+    case .processing: return "Transcribing & cleaning up…"
     }
   }
 

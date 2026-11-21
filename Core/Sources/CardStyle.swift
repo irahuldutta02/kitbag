@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Lightweight ObservableObject box for view-local state (compatible with Command Line Tools
@@ -121,12 +122,24 @@ public struct PressableStyle: ButtonStyle {
 /// Consistent inset search bar used across Clipboard, Authenticator, and System Monitor.
 public struct SearchFieldBar: View {
   let placeholder: LocalizedStringKey
+  let plainPlaceholder: String?
   @Binding var text: String
+  let autoFocus: Bool
+  let onSubmit: (() -> Void)?
   @Environment(\.colorScheme) private var scheme
 
-  public init(_ placeholder: LocalizedStringKey, text: Binding<String>) {
+  public init(
+    _ placeholder: LocalizedStringKey,
+    text: Binding<String>,
+    autoFocus: Bool = false,
+    plainPlaceholder: String? = nil,
+    onSubmit: (() -> Void)? = nil
+  ) {
     self.placeholder = placeholder
+    self.plainPlaceholder = plainPlaceholder
     self._text = text
+    self.autoFocus = autoFocus
+    self.onSubmit = onSubmit
   }
 
   public var body: some View {
@@ -134,9 +147,18 @@ public struct SearchFieldBar: View {
       Image(systemName: "magnifyingglass")
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(.secondary)
-      TextField(placeholder, text: $text)
-        .textFieldStyle(.plain)
-        .font(.callout)
+      if autoFocus {
+        AutoFocusSearchField(
+          placeholder: plainPlaceholder ?? "",
+          text: $text,
+          onSubmit: onSubmit
+        )
+      } else {
+        TextField(placeholder, text: $text)
+          .textFieldStyle(.plain)
+          .font(.callout)
+          .onSubmit { onSubmit?() }
+      }
       if !text.isEmpty {
         Button {
           text = ""
@@ -163,6 +185,125 @@ public struct SearchFieldBar: View {
           lineWidth: 0.5
         )
     )
+  }
+}
+
+/// AppKit-backed text field that reliably takes keyboard focus inside an NSPopover as soon as it
+/// appears and selects any existing text so the user can type immediately.
+private struct AutoFocusSearchField: NSViewRepresentable {
+  let placeholder: String
+  @Binding var text: String
+  let onSubmit: (() -> Void)?
+
+  func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+  func makeNSView(context: Context) -> FocusTextField {
+    let tf = FocusTextField()
+    tf.isBordered = false
+    tf.drawsBackground = false
+    tf.focusRingType = .none
+    tf.font = .systemFont(ofSize: NSFont.systemFontSize(for: .regular) - 1)
+    tf.placeholderString = placeholder
+    tf.lineBreakMode = .byTruncatingHead
+    tf.usesSingleLineMode = true
+    tf.cell?.isScrollable = true
+    tf.delegate = context.coordinator
+    tf.stringValue = text
+    return tf
+  }
+
+  func updateNSView(_ tf: FocusTextField, context: Context) {
+    context.coordinator.parent = self
+    if tf.stringValue != text {
+      tf.stringValue = text
+    }
+    if tf.placeholderString != placeholder {
+      tf.placeholderString = placeholder
+    }
+  }
+
+  final class FocusTextField: NSTextField {
+    private var didAutoFocus = false
+    private var keyObserver: NSObjectProtocol?
+
+    deinit {
+      if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if let keyObserver {
+        NotificationCenter.default.removeObserver(keyObserver)
+        self.keyObserver = nil
+      }
+      guard let window else {
+        didAutoFocus = false
+        return
+      }
+      keyObserver = NotificationCenter.default.addObserver(
+        forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self, !self.didAutoFocus else { return }
+          self.focusNow()
+        }
+      }
+      focusSoon()
+    }
+
+    func focusSoon() {
+      DispatchQueue.main.async { [weak self] in
+        self?.focusNow()
+      }
+      // Retry shortly after in case the popover/panel finishes ordering front on the next frame.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+        guard let self, !self.didAutoFocus else { return }
+        self.focusNow()
+      }
+    }
+
+    private func focusNow() {
+      guard let window else { return }
+      if !window.isKeyWindow { window.makeKey() }
+      if window.firstResponder !== currentEditor() {
+        if window.makeFirstResponder(self) {
+          currentEditor()?.selectAll(nil)
+          didAutoFocus = true
+        }
+      } else {
+        didAutoFocus = true
+      }
+    }
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var parent: AutoFocusSearchField
+    init(_ parent: AutoFocusSearchField) { self.parent = parent }
+
+    func controlTextDidChange(_ obj: Notification) {
+      guard let tf = obj.object as? NSTextField else { return }
+      if parent.text != tf.stringValue {
+        parent.text = tf.stringValue
+      }
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector)
+      -> Bool
+    {
+      if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        parent.onSubmit?()
+        return true
+      }
+      if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+        if !parent.text.isEmpty {
+          parent.text = ""
+          return true
+        }
+        NotificationCenter.default.post(name: .kitbagCloseMenu, object: nil)
+        return true
+      }
+      return false
+    }
   }
 }
 

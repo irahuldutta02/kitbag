@@ -9,6 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   let manager = ToolManager(descriptors: AllTools.descriptors)
   private var statusItem: NSStatusItem!
   private let popover = NSPopover()
+  private var floatingPanel: MenuPanel?
+  private var panelHost: NSHostingController<PopoverView>?
+  private var panelResignObserver: NSObjectProtocol?
+  private var panelOpenedAt = Date.distantPast
+  private var panelTopEdge: CGFloat = 0
+  private var panelCenterX: CGFloat = 0
+  private var panelScreenFrame: NSRect = .zero
   private let state = PopoverState()
   private let settingsNav = SettingsNav()
   private let connectivity = ConnectivityStatus()
@@ -17,8 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var appearanceObservation: NSKeyValueObservation?
   private var outsideClickMonitor: Any?
 
+  private var isMenuShown: Bool { popover.isShown || (floatingPanel?.isVisible ?? false) }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     manager.bootstrap()
+    EditShortcuts.install()
     Updater.shared.start()
     // After a drop (or a drag that left), show every tab again, staying on the shelf.
     NotificationCenter.default.addObserver(
@@ -34,7 +44,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
     NotificationCenter.default.addObserver(forName: .kitbagCloseMenu, object: nil, queue: .main) {
       [weak self] _ in
-      MainActor.assumeIsolated { self?.popover.performClose(nil) }
+      MainActor.assumeIsolated { self?.closeMenu() }
+    }
+    NotificationCenter.default.addObserver(forName: .kitbagOpenTab, object: nil, queue: .main) {
+      [weak self] note in
+      let tabID = note.object as? String
+      MainActor.assumeIsolated {
+        guard let self, let tabID else { return }
+        if self.isMenuShown && self.state.selected == tabID {
+          self.closeMenu()
+        } else {
+          self.state.selected = tabID
+          if self.popover.isShown {
+            self.popover.contentViewController?.view.window?.makeKey()
+          } else if let panel = self.floatingPanel, panel.isVisible {
+            panel.makeKeyAndOrderFront(nil)
+          } else {
+            // Global shortcuts use a floating panel instead of NSPopover so auto-hiding
+            // menu bars and full-screen Spaces never immediately dismiss the menu.
+            self.showFloatingPanel()
+          }
+        }
+      }
+    }
+    NotificationCenter.default.addObserver(
+      forName: .kitbagOpenSettings, object: nil, queue: .main
+    ) { [weak self] note in
+      let page = note.object as? String
+      MainActor.assumeIsolated {
+        self?.closeMenu()
+        self?.openSettings(page: page)
+      }
     }
     popover.behavior = .transient
     popover.delegate = self
@@ -66,25 +106,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   }
 
   @objc private func toggle() {
-    popover.isShown ? popover.performClose(nil) : show()
+    isMenuShown ? closeMenu() : show()
   }
 
-  private func show() {
-    guard !popover.isShown, let button = statusItem.button else { return }
-    // Content is built only now and released on close.
+  private func closeMenu() {
+    if popover.isShown { popover.performClose(nil) }
+    closeFloatingPanel()
+  }
+
+  private func makePopoverHost() -> NSHostingController<PopoverView> {
     let host = NSHostingController(
       rootView: PopoverView(manager: manager, state: state, connectivity: connectivity) {
         [weak self] targetPage in
-        self?.popover.performClose(nil)
+        self?.closeMenu()
         self?.openSettings(page: targetPage)
       })
     host.sizingOptions = .preferredContentSize
+    return host
+  }
+
+  private func show() {
+    closeFloatingPanel()
+    guard !popover.isShown, let button = statusItem.button else { return }
+    // Content is built only now and released on close.
+    let host = makePopoverHost()
     popover.contentViewController = host
     // Keep the popover exactly as tall as the current tab, growing and shrinking with it.
     sizeObservation = host.observe(\.preferredContentSize) { [weak self] host, _ in
       MainActor.assumeIsolated { self?.popover.contentSize = host.preferredContentSize }
     }
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    popover.contentViewController?.view.window?.makeKey()
     connectivity.start()
     // A transient popover doesn't dismiss on clicks in other apps (e.g. full-screen ones),
     // so also watch for mouse-downs delivered to other processes.
@@ -95,15 +147,159 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
   }
 
-  func popoverDidClose(_ notification: Notification) {
+  /// Presents the menu inside a borderless floating panel so global shortcuts work reliably
+  /// even when macOS's menu bar is auto-hidden or the user is in a full-screen Space.
+  private func showFloatingPanel() {
+    if popover.isShown { popover.performClose(nil) }
+    closeFloatingPanel()
+
+    let host = makePopoverHost()
+    panelHost = host
+    host.view.layoutSubtreeIfNeeded()
+    let measured =
+      host.preferredContentSize.height > 10 ? host.preferredContentSize : host.view.fittingSize
+    let initialSize = normalizedPanelSize(measured)
+
+    let screen =
+      NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
+      ?? NSScreen.main ?? NSScreen.screens.first
+    let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+    let full = screen?.frame ?? visible
+    panelScreenFrame = visible
+
+    // Anchor horizontally under the status icon if it lives on this screen; otherwise top-right.
+    let margin: CGFloat = 10
+    if let statusFrame = statusItem.button?.window?.frame,
+      statusFrame.width > 0,
+      statusFrame.midX >= full.minX && statusFrame.midX <= full.maxX
+    {
+      panelCenterX = statusFrame.midX
+    } else {
+      panelCenterX = visible.maxX - margin - initialSize.width / 2
+    }
+    let menuBarVisible = visible.maxY < full.maxY - 4
+    panelTopEdge = menuBarVisible ? visible.maxY - 6 : full.maxY - 10
+
+    let frame = panelFrame(for: initialSize)
+    let panel = MenuPanel(
+      contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: false)
+    panel.isFloatingPanel = true
+    panel.level = .popUpMenu
+    panel.hidesOnDeactivate = false
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = true
+    panel.isReleasedWhenClosed = false
+    panel.animationBehavior = .utilityWindow
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+    panel.onEscape = { [weak self] in self?.closeFloatingPanel() }
+
+    let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: frame.size))
+    blur.material = .popover
+    blur.blendingMode = .behindWindow
+    blur.state = .active
+    blur.wantsLayer = true
+    blur.layer?.cornerRadius = 14
+    blur.layer?.cornerCurve = .continuous
+    blur.layer?.masksToBounds = true
+    blur.layer?.borderWidth = 0.75
+    blur.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+    blur.autoresizingMask = [.width, .height]
+
+    host.view.frame = blur.bounds
+    host.view.autoresizingMask = [.width, .height]
+    blur.addSubview(host.view)
+    panel.contentView = blur
+    floatingPanel = panel
+
+    sizeObservation = host.observe(\.preferredContentSize) { [weak self] host, _ in
+      MainActor.assumeIsolated { self?.resizeFloatingPanel(to: host.preferredContentSize) }
+    }
+
+    panelOpenedAt = Date()
+    panel.setFrame(frame, display: true)
+    panel.makeKeyAndOrderFront(nil)
+    connectivity.start()
+
+    outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+      matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.closeFloatingPanel() }
+    }
+    panelResignObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, Date().timeIntervalSince(self.panelOpenedAt) > 0.15 else { return }
+        self.closeFloatingPanel()
+      }
+    }
+  }
+
+  private func normalizedPanelSize(_ size: NSSize) -> NSSize {
+    NSSize(
+      width: max(360, size.width.isFinite && size.width > 0 ? size.width : 380),
+      height: max(120, min(size.height.isFinite && size.height > 0 ? size.height : 320, 680))
+    )
+  }
+
+  private func panelFrame(for rawSize: NSSize) -> NSRect {
+    let size = normalizedPanelSize(rawSize)
+    let margin: CGFloat = 10
+    let maxHeight = max(160, panelTopEdge - panelScreenFrame.minY - margin)
+    let clampedHeight = min(size.height, maxHeight)
+    let x = max(
+      panelScreenFrame.minX + margin,
+      min(panelCenterX - size.width / 2, panelScreenFrame.maxX - size.width - margin))
+    let y = max(panelScreenFrame.minY + margin, panelTopEdge - clampedHeight)
+    return NSRect(x: x.rounded(), y: y.rounded(), width: size.width.rounded(), height: clampedHeight.rounded())
+  }
+
+  private func resizeFloatingPanel(to newSize: NSSize) {
+    guard let panel = floatingPanel, panel.isVisible else { return }
+    let next = panelFrame(for: newSize)
+    if abs(next.width - panel.frame.width) > 0.5 || abs(next.height - panel.frame.height) > 0.5
+      || abs(next.origin.x - panel.frame.origin.x) > 0.5
+      || abs(next.origin.y - panel.frame.origin.y) > 0.5
+    {
+      panel.setFrame(next, display: true)
+    }
+  }
+
+  private func closeFloatingPanel() {
+    guard let panel = floatingPanel else { return }
     if let monitor = outsideClickMonitor {
       NSEvent.removeMonitor(monitor)
       outsideClickMonitor = nil
     }
-    manager.setVisibleTool(nil)
-    connectivity.stop()
-    state.dropMode = false
+    if let observer = panelResignObserver {
+      NotificationCenter.default.removeObserver(observer)
+      panelResignObserver = nil
+    }
     sizeObservation = nil
+    panel.orderOut(nil)
+    panel.contentView = nil
+    floatingPanel = nil
+    panelHost = nil
+    if !popover.isShown {
+      manager.setVisibleTool(nil)
+      connectivity.stop()
+      state.dropMode = false
+    }
+  }
+
+  func popoverDidClose(_ notification: Notification) {
+    if let monitor = outsideClickMonitor, floatingPanel == nil {
+      NSEvent.removeMonitor(monitor)
+      outsideClickMonitor = nil
+    }
+    if floatingPanel == nil {
+      manager.setVisibleTool(nil)
+      connectivity.stop()
+      state.dropMode = false
+      sizeObservation = nil
+    }
     popover.contentViewController = nil
   }
 
@@ -196,6 +392,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     NSApp.dockTile.display()
     NSApp.setActivationPolicy(.accessory)  // back to menu-bar only
   }
+}
+
+/// Floating borderless panel that can accept keyboard input (e.g. search) without activating
+/// Kitbag or depending on an auto-hidden menu bar window.
+private final class MenuPanel: NSPanel {
+  var onEscape: (() -> Void)?
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { false }
+  override func cancelOperation(_ sender: Any?) { onEscape?() }
 }
 
 /// Transparent overlay on the status button: forwards clicks, reports drag-enter.

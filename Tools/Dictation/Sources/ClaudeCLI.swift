@@ -94,7 +94,9 @@ enum ClaudeCLI {
   }
 
   /// Sends the transcript through the chosen model and returns the cleaned text and what it used.
-  static func refine(_ text: String, model: String, effort: String, cli: String) async throws -> Refined {
+  static func refine(
+    _ text: String, model: String, effort: String, prompt: String = ClaudeCLI.instructions, cli: String
+  ) async throws -> Refined {
     try await withCheckedThrowingContinuation { cont in
       DispatchQueue.global().async {
         let p = Process()
@@ -103,7 +105,7 @@ enum ClaudeCLI {
         p.arguments = effortArgs + [
           "-p", "--output-format", "json", "--model", model, "--tools", "", "--disable-slash-commands",
           "--setting-sources", "", "--no-session-persistence",
-          "--system-prompt", instructions,
+          "--system-prompt", prompt,
         ]
         p.currentDirectoryURL = FileManager.default.temporaryDirectory  // no project files or CLAUDE.md
         var env = ProcessInfo.processInfo.environment

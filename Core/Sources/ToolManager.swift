@@ -104,7 +104,7 @@ public final class ToolManager: ObservableObject {
   private func publishToolSwitches() {
     let switches = descriptors.filter(\.listedInApps).map { d in
       ToolSwitch(
-        id: d.id, name: d.name, symbol: d.symbol,
+        id: d.id, name: d.name, symbol: d.symbol, category: d.appsCategory,
         isOn: isEnabled(d.id) && isAvailable(d), error: errors[d.id],
         set: { [weak self] on in self?.setEnabled(d.id, on) })
     }

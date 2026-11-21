@@ -27,14 +27,20 @@ public struct ToolSwitch: Identifiable {
   public let id: String
   public let name: LocalizedStringKey
   public let symbol: String
+  /// Optional use-case category id (e.g. "dictation") so the Apps tab can group it with related apps.
+  public let category: String?
   public let isOn: Bool
   /// Why the tool couldn't start, if it failed.
   public let error: String?
   public let set: @MainActor (Bool) -> Void
-  public init(id: String, name: LocalizedStringKey, symbol: String, isOn: Bool, error: String?, set: @escaping @MainActor (Bool) -> Void) {
+  public init(
+    id: String, name: LocalizedStringKey, symbol: String, category: String? = nil,
+    isOn: Bool, error: String?, set: @escaping @MainActor (Bool) -> Void
+  ) {
     self.id = id
     self.name = name
     self.symbol = symbol
+    self.category = category
     self.isOn = isOn
     self.error = error
     self.set = set
@@ -117,12 +123,15 @@ public struct ToolDescriptor: Identifiable {
   public let showsMenuTab: Bool
   /// True to offer this tool's on/off switch in the Apps tab.
   public let listedInApps: Bool
+  /// Optional use-case category id when listed in the Apps tab (e.g. "dictation").
+  public let appsCategory: String?
   public let make: @MainActor () -> any KitbagTool
 
   public init(
     id: String, name: LocalizedStringKey, symbol: String, defaultEnabled: Bool = true,
     customIcon: (@MainActor () -> AnyView)? = nil, requiresApp: String? = nil, brewCask: String? = nil,
     showsTab: Bool = true, showsMenuTab: Bool = true, listedInApps: Bool = false,
+    appsCategory: String? = nil,
     make: @escaping @MainActor () -> any KitbagTool
   ) {
     self.customIcon = customIcon
@@ -131,6 +140,7 @@ public struct ToolDescriptor: Identifiable {
     self.showsTab = showsTab
     self.showsMenuTab = showsMenuTab
     self.listedInApps = listedInApps
+    self.appsCategory = appsCategory
     self.id = id
     self.name = name
     self.symbol = symbol
@@ -145,6 +155,11 @@ extension Notification.Name {
   /// Posted by a tool that is about to open its own window or take a screenshot, so the menu
   /// pop-up gets out of the way first.
   public static let kitbagCloseMenu = Notification.Name("kitbag.closeMenu")
+  /// Posted by a tool's global shortcut to open (or toggle) the menu pop-up directly to that tool's tab.
+  /// Pass `object: toolID` (String).
+  public static let kitbagOpenTab = Notification.Name("kitbag.openTab")
+  /// Posted to open the Settings window directly to a given page id (`object: pageID` String).
+  public static let kitbagOpenSettings = Notification.Name("kitbag.openSettings")
 }
 
 /// The tool's icon: its custom glyph if it has one, otherwise its SF Symbol. Every icon is fitted

@@ -1,5 +1,7 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
+import KitbagCore
 import Testing
 
 @testable import Authenticator
@@ -42,7 +44,7 @@ private func migrationLink(_ accounts: [(secret: Data, name: String, issuer: Str
     let m = AuthenticatorModel(
       storage: FileVault(url: dir.appendingPathComponent("vault.json")), defaults: UserDefaults(suiteName: suite)!,
       pasteboard: pb)
-    m.start()
+    m.start(registerHotKey: false)
     return m
   }
 
@@ -155,6 +157,29 @@ private func migrationLink(_ accounts: [(secret: Data, name: String, issuer: Str
     #expect(m.filtered("a@x").map(\.primary) == ["Amazon"])
     m.togglePin(m.entries.first { $0.issuer == "Zed" }!.id)
     #expect(m.filtered("").first?.primary == "Zed")
+  }
+
+  @Test func defaultShortcutIsOptionCommandA() {
+    let m = makeModel()
+    #expect(m.shortcut == AuthenticatorModel.defaultShortcut)
+    #expect(m.shortcut?.display == "⌥⌘A")
+  }
+
+  @Test func customShortcutIsRemembered() {
+    let m = makeModel()
+    let custom = KeyShortcut(keyCode: 11, modifiers: UInt32(controlKey | shiftKey), label: "B")
+    #expect(m.setShortcut(custom))
+    #expect(m.shortcut == custom)
+    #expect(makeModel().shortcut == custom)
+  }
+
+  @Test func shortcutCanBeTurnedOff() {
+    let m = makeModel()
+    #expect(m.setShortcut(nil))
+    #expect(m.shortcut == nil)
+    #expect(makeModel().shortcut == nil)
+    #expect(m.setShortcut(AuthenticatorModel.defaultShortcut))
+    #expect(makeModel().shortcut == AuthenticatorModel.defaultShortcut)
   }
 
   @Test func sameSecretIsNotAddedTwice() {

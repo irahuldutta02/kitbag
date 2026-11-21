@@ -306,7 +306,7 @@ enum OllamaClient {
     return (resp as? HTTPURLResponse)?.statusCode == 200
   }
 
-  static func refine(_ text: String, model: String) async throws -> ClaudeCLI.Refined {
+  static func refine(_ text: String, model: String, prompt: String = ClaudeCLI.instructions) async throws -> ClaudeCLI.Refined {
     var req = URLRequest(url: base.appendingPathComponent("api/chat"))
     req.httpMethod = "POST"
     req.timeoutInterval = 90
@@ -315,7 +315,7 @@ enum OllamaClient {
       "model": model, "stream": false, "keep_alive": "30m",
       "options": ["temperature": 0.2, "num_ctx": 4096],
       "messages": [
-        ["role": "system", "content": ClaudeCLI.instructions],
+        ["role": "system", "content": prompt],
         ["role": "user", "content": "<transcript>\(text)</transcript>"],
       ],
     ]

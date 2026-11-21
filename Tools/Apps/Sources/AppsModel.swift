@@ -1,11 +1,51 @@
 import AppKit
+import Carbon.HIToolbox
 import KitbagCore
+import SwiftUI
+
+/// Use-case grouping for companion apps and Kitbag tools shown in the Apps tab.
+enum AppCategory: String, CaseIterable, Identifiable {
+  case dictation
+  case cloudStorage
+  case audio
+
+  var id: String { rawValue }
+
+  var name: String {
+    switch self {
+    case .dictation: return "Dictation"
+    case .cloudStorage: return "Cloud Storage"
+    case .audio: return "Audio"
+    }
+  }
+
+  var title: LocalizedStringKey { LocalizedStringKey(name) }
+
+  var symbol: String {
+    switch self {
+    case .dictation: return "waveform"
+    case .cloudStorage: return "icloud"
+    case .audio: return "speaker.wave.2"
+    }
+  }
+}
+
+/// A non-empty group of switches and companion apps rendered together in a category card.
+struct AppCategoryGroup: Identifiable {
+  let id: String
+  let title: LocalizedStringKey
+  let symbol: String
+  let category: AppCategory?
+  let switches: [ToolSwitch]
+  let apps: [ManagedApp]
+}
 
 /// An app Kitbag can switch on and off.
 struct ManagedApp: Identifiable {
   let id: String
   let name: String
   let bundleID: String
+  let category: AppCategory
   /// Dictation apps that keep working without a window. When Kitbag switches one on, its window
   /// is kept out of sight (the hotkey would otherwise bring it back every time you dictate).
   var background = false
@@ -14,12 +54,20 @@ struct ManagedApp: Identifiable {
 @MainActor
 final class AppsModel: ObservableObject {
   static let catalog = [
-    ManagedApp(id: "gdrive", name: "Google Drive", bundleID: "com.google.drivefs"),
-    ManagedApp(id: "pdrive", name: "Proton Drive", bundleID: "ch.protonmail.drive"),
-    ManagedApp(id: "wispr", name: "Wispr Flow", bundleID: "com.electron.wispr-flow", background: true),
-    ManagedApp(id: "openwhispr", name: "OpenWhispr", bundleID: "com.gizmolabs.openwhispr", background: true),
-    ManagedApp(id: "finetune", name: "FineTune", bundleID: "com.finetuneapp.FineTune"),
+    ManagedApp(id: "gdrive", name: "Google Drive", bundleID: "com.google.drivefs", category: .cloudStorage),
+    ManagedApp(id: "pdrive", name: "Proton Drive", bundleID: "ch.protonmail.drive", category: .cloudStorage),
+    ManagedApp(
+      id: "wispr", name: "Wispr Flow", bundleID: "com.electron.wispr-flow", category: .dictation,
+      background: true),
+    ManagedApp(
+      id: "openwhispr", name: "OpenWhispr", bundleID: "com.gizmolabs.openwhispr", category: .dictation,
+      background: true),
+    ManagedApp(id: "finetune", name: "FineTune", bundleID: "com.finetuneapp.FineTune", category: .audio),
   ]
+
+  static let defaultShortcut = KeyShortcut(
+    keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(controlKey | optionKey), label: "A")
+  private static let shortcutPrefix = "kitbag.apps.shortcut"
 
   @Published private(set) var running: Set<String> = []
   @Published private(set) var busy: Set<String> = []
@@ -28,36 +76,90 @@ final class AppsModel: ObservableObject {
   /// Kitbag's own tools that can be switched here too (for example Dictation).
   @Published var toolSwitches: [ToolSwitch] = []
   /// Apps the user chose not to show in the Apps tab.
-  @Published private(set) var hidden: Set<String> = Set(
-    UserDefaults.standard.stringArray(forKey: "kitbag.apps.hidden") ?? [])
+  @Published private(set) var hidden: Set<String>
+  /// Background apps the user wants to see the window of (turns the keep-out-of-the-way off).
+  @Published private(set) var windowAllowed: Set<String>
+  /// The key combination that opens the Apps tab anywhere; `nil` when turned off.
+  @Published private(set) var shortcut: KeyShortcut?
+  /// False if another app already owns the shortcut.
+  @Published private(set) var shortcutWorks = true
+
+  private let defaults: UserDefaults
+  private let hotKey = GlobalHotKey()
+  private var hotKeyEnabled = false
 
   /// Only apps that are installed and not hidden; anything missing is listed in Settings instead.
   var visible: [ManagedApp] { Self.catalog.filter { installed.contains($0.id) && !hidden.contains($0.id) } }
 
+  /// Groups visible apps and tool switches by use-case category, omitting empty categories.
+  /// Any `ToolSwitch` whose `category` is nil or unrecognized lands in a fallback "Kitbag Tools" group.
+  func grouped(apps: [ManagedApp]? = nil, switches: [ToolSwitch]? = nil) -> [AppCategoryGroup] {
+    let activeApps = apps ?? visible
+    let activeSwitches = switches ?? toolSwitches
+    var groups: [AppCategoryGroup] = []
+    for cat in AppCategory.allCases {
+      let catSwitches = activeSwitches.filter {
+        $0.category.flatMap(AppCategory.init(rawValue:)) == cat
+      }
+      let catApps = activeApps.filter { $0.category == cat }
+      if !catSwitches.isEmpty || !catApps.isEmpty {
+        groups.append(
+          AppCategoryGroup(
+            id: cat.id, title: cat.title, symbol: cat.symbol,
+            category: cat, switches: catSwitches, apps: catApps))
+      }
+    }
+    let fallbackSwitches = activeSwitches.filter {
+      $0.category.flatMap(AppCategory.init(rawValue:)) == nil
+    }
+    if !fallbackSwitches.isEmpty {
+      groups.append(
+        AppCategoryGroup(
+          id: "kitbag-tools", title: "Kitbag Tools", symbol: "square.grid.2x2",
+          category: nil, switches: fallbackSwitches, apps: []))
+    }
+    return groups
+  }
+
+  var groupedVisible: [AppCategoryGroup] { grouped() }
+
   func setShown(_ app: ManagedApp, _ on: Bool) {
     if on { hidden.remove(app.id) } else { hidden.insert(app.id) }
-    UserDefaults.standard.set(Array(hidden), forKey: "kitbag.apps.hidden")
+    defaults.set(Array(hidden), forKey: "kitbag.apps.hidden")
   }
-  /// Background apps the user wants to see the window of (turns the keep-out-of-the-way off).
-  @Published private(set) var windowAllowed: Set<String> = Set(
-    UserDefaults.standard.stringArray(forKey: "kitbag.apps.windowAllowed") ?? [])
 
   func setWindowAllowed(_ app: ManagedApp, _ on: Bool) {
     if on { windowAllowed.insert(app.id) } else { windowAllowed.remove(app.id) }
-    UserDefaults.standard.set(Array(windowAllowed), forKey: "kitbag.apps.windowAllowed")
+    defaults.set(Array(windowAllowed), forKey: "kitbag.apps.windowAllowed")
   }
 
   /// Apps Kitbag switched on, whose window it keeps out of the way. Remembered across Kitbag restarts.
-  private var guarded: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "kitbag.apps.guarded") ?? [])
+  private var guarded: Set<String>
   private func setGuarded(_ app: ManagedApp, _ on: Bool) {
     if on { guarded.insert(app.id) } else { guarded.remove(app.id) }
-    UserDefaults.standard.set(Array(guarded), forKey: "kitbag.apps.guarded")
+    defaults.set(Array(guarded), forKey: "kitbag.apps.guarded")
   }
   private var lastOtherApp: NSRunningApplication?
   private var guardTasks: [String: Task<Void, Never>] = [:]
   private var observers: [NSObjectProtocol] = []
 
-  func observe() {
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    hidden = Set(defaults.stringArray(forKey: "kitbag.apps.hidden") ?? [])
+    windowAllowed = Set(defaults.stringArray(forKey: "kitbag.apps.windowAllowed") ?? [])
+    guarded = Set(defaults.stringArray(forKey: "kitbag.apps.guarded") ?? [])
+    shortcut = KeyShortcut.load(
+      from: defaults, prefix: Self.shortcutPrefix, default: Self.defaultShortcut)
+  }
+
+  func observe(registerHotKey: Bool = true) {
+    if registerHotKey && !hotKeyEnabled {
+      hotKeyEnabled = true
+      hotKey.onPress = {
+        NotificationCenter.default.post(name: .kitbagOpenTab, object: "apps")
+      }
+      registerShortcut()
+    }
     guard observers.isEmpty else { return }
     let ws = NSWorkspace.shared.notificationCenter
     for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
@@ -74,10 +176,47 @@ final class AppsModel: ObservableObject {
   }
 
   func stopObserving() {
+    hotKey.unregister()
+    hotKeyEnabled = false
     guardTasks.values.forEach { $0.cancel() }
     guardTasks = [:]
     observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
     observers = []
+  }
+
+  // MARK: Shortcut
+
+  private func registerShortcut() {
+    guard let s = shortcut else {
+      hotKey.unregister()
+      shortcutWorks = true
+      return
+    }
+    shortcutWorks = hotKey.register(keyCode: s.keyCode, modifiers: s.modifiers)
+  }
+
+  /// Switches to a new shortcut (or turns it off with `nil`). If another app already owns it,
+  /// the old one stays and this returns false.
+  @discardableResult
+  func setShortcut(_ new: KeyShortcut?) -> Bool {
+    if hotKeyEnabled, let new {
+      guard hotKey.register(keyCode: new.keyCode, modifiers: new.modifiers) else {
+        if let old = shortcut { hotKey.register(keyCode: old.keyCode, modifiers: old.modifiers) }
+        return false
+      }
+    } else if hotKeyEnabled {
+      hotKey.unregister()
+    }
+    shortcut = new
+    shortcutWorks = true
+    KeyShortcut.save(new, to: defaults, prefix: Self.shortcutPrefix)
+    return true
+  }
+
+  /// While a new shortcut is being typed, the current one must not fire.
+  func pauseHotKey(_ pause: Bool) {
+    guard hotKeyEnabled else { return }
+    if pause { hotKey.unregister() } else { registerShortcut() }
   }
 
   func url(_ app: ManagedApp) -> URL? {
