@@ -109,17 +109,11 @@ public struct ProvidersSettingsView: View {
   }
 }
 
-/// Colored tile with the provider's glyph.
+/// Tile with the provider's real logo.
 struct ProviderGlyph: View {
   let id: AIProviderID
   var size: CGFloat = 30
-  var body: some View {
-    Image(systemName: id.symbol)
-      .font(.system(size: size * 0.46, weight: .semibold))
-      .foregroundStyle(.white)
-      .frame(width: size, height: size)
-      .background(id.accent.gradient, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
-  }
+  var body: some View { ProviderLogo(id: id, size: size) }
 }
 
 private struct ProviderDetail: View {
