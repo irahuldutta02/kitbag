@@ -20,6 +20,7 @@ final class FnKeyWatcher {
   private var observers: [NSObjectProtocol] = []
   private var isDown = false
   private var running = false
+  private var ticks = 0
 
   func start() {
     stop()
@@ -33,9 +34,12 @@ final class FnKeyWatcher {
       self?.handle(e.keyCode, e.modifierFlags.contains(.function))
       return e
     }
-    watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-      Task { @MainActor in self?.check() }
+    let wd = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.check() }
     }
+    wd.tolerance = 0.5  // lets the system coalesce wakeups
+    RunLoop.main.add(wd, forMode: .common)
+    watchdog = wd
     let center = NSWorkspace.shared.notificationCenter
     for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.screensDidWakeNotification] {
       observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -114,7 +118,9 @@ final class FnKeyWatcher {
     if let tap {
       if !CGEvent.tapIsEnabled(tap: tap) { rebuild() }
     } else {
-      installTap()  // permission may have been granted since
+      // Permission may have been granted since; trying is costly, so only every couple of seconds.
+      ticks += 1
+      if ticks % 2 == 0 { installTap() }
     }
     // A missed key-up would otherwise swallow the next press.
     if isDown, !CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn) {

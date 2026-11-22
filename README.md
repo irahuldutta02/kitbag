@@ -32,7 +32,6 @@ Switch on only the tools you want.
 | ![](assets/icons/audio.svg) | **Audio** | Switch sound output and input devices instantly |
 | ![](assets/icons/devtools.svg) | **Dev Tools** | Color picker, screen ruler, Docker and database switches, Node and Python versions |
 | ![](assets/icons/apps.svg) | **Apps** | Start or quit Google Drive, Proton Drive, Wispr Flow and FineTune |
-| ![](assets/icons/wifi.svg) | **Wi-Fi and Bluetooth** | Status and quick controls in the popup |
 
 ## In depth
 

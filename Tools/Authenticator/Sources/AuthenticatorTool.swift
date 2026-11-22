@@ -12,7 +12,7 @@ public final class AuthenticatorTool: KitbagTool {
 
   public func start() throws {
     let m = AuthenticatorModel()
-    m.start()
+    m.start(readVault: false)
     model = m
   }
 

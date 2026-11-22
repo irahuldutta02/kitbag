@@ -90,8 +90,20 @@ final class LocalSetup: ObservableObject {
     return FileManager.default.fileExists(atPath: url.path)
   }
 
+  /// Models Kitbag has asked Ollama to load this session.
+  private var loadedModels: Set<String> = []
+  func noteLoaded(_ tag: String) { loadedModels.insert(tag) }
+
+  /// Dictation is off: free the models. A server Kitbag started is shut down; one that was already
+  /// running (or the Ollama app) stays up, but the models Kitbag loaded are unloaded from memory.
   func stop() {
-    server?.terminate()  // only the server Kitbag started itself
+    let tags = loadedModels
+    loadedModels = []
+    if let server, server.isRunning {
+      server.terminate()  // only the server Kitbag started itself
+    } else if !tags.isEmpty {
+      Task.detached { for tag in tags { await OllamaClient.unload(tag) } }
+    }
     server = nil
   }
 
@@ -304,6 +316,16 @@ enum OllamaClient {
     req.timeoutInterval = 1.5
     guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return false }
     return (resp as? HTTPURLResponse)?.statusCode == 200
+  }
+
+  /// Asks Ollama to drop a model from memory right now.
+  static func unload(_ model: String) async {
+    var req = URLRequest(url: base.appendingPathComponent("api/generate"))
+    req.httpMethod = "POST"
+    req.timeoutInterval = 5
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": model, "keep_alive": 0])
+    _ = try? await URLSession.shared.data(for: req)
   }
 
   static func refine(_ text: String, model: String, prompt: String = ClaudeCLI.instructions) async throws -> ClaudeCLI.Refined {

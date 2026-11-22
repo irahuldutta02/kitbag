@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var panelScreenFrame: NSRect = .zero
   private let state = PopoverState()
   private let settingsNav = SettingsNav()
-  private let connectivity = ConnectivityStatus()
   private var settingsWindow: NSWindow?
   private var sizeObservation: NSKeyValueObservation?
   private var appearanceObservation: NSKeyValueObservation?
@@ -27,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var isMenuShown: Bool { popover.isShown || (floatingPanel?.isVisible ?? false) }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    Diagnostics.shared.contextProvider = { [weak self] in
+      guard let self else { return [] }
+      let on = self.manager.enabledTools.map(\.descriptor.id).sorted().joined(separator: ", ")
+      return ["tools enabled: \(on.isEmpty ? "none" : on)"]
+    }
     manager.bootstrap()
     EditShortcuts.install()
     Updater.shared.start()
@@ -116,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
   private func makePopoverHost() -> NSHostingController<PopoverView> {
     let host = NSHostingController(
-      rootView: PopoverView(manager: manager, state: state, connectivity: connectivity) {
+      rootView: PopoverView(manager: manager, state: state) {
         [weak self] targetPage in
         self?.closeMenu()
         self?.openSettings(page: targetPage)
@@ -137,7 +141,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     popover.contentViewController?.view.window?.makeKey()
-    connectivity.start()
     // A transient popover doesn't dismiss on clicks in other apps (e.g. full-screen ones),
     // so also watch for mouse-downs delivered to other processes.
     outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
@@ -220,7 +223,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     panelOpenedAt = Date()
     panel.setFrame(frame, display: true)
     panel.makeKeyAndOrderFront(nil)
-    connectivity.start()
 
     outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
       matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -284,7 +286,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     panelHost = nil
     if !popover.isShown {
       manager.setVisibleTool(nil)
-      connectivity.stop()
       state.dropMode = false
     }
   }
@@ -296,7 +297,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
     if floatingPanel == nil {
       manager.setVisibleTool(nil)
-      connectivity.stop()
       state.dropMode = false
       sizeObservation = nil
     }
@@ -337,29 +337,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       settingsWindow = w
     }
     NSApp.setActivationPolicy(.regular)  // show in the Dock while the app window is open
-    updateDockIcon()
-    appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
-      MainActor.assumeIsolated { self?.updateDockIcon() }
-    }
+    NSApp.dockTile.contentView = nil  // use the app's own icon, same as in Applications
+    NSApp.dockTile.display()
     NSApp.activate(ignoringOtherApps: true)
     settingsWindow?.makeKeyAndOrderFront(nil)
-  }
-
-  /// Draws the light or dark icon artwork on the Dock tile itself, so it follows the system
-  /// appearance and isn't framed like a legacy bundle icon.
-  private func updateDockIcon() {
-    let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-    guard
-      let url = Bundle.main.url(
-        forResource: dark ? "AppIconDark" : "AppIconLight", withExtension: "png"),
-      let image = NSImage(contentsOf: url)
-    else { return }
-    let tile = NSApp.dockTile
-    let view = NSImageView(frame: NSRect(origin: .zero, size: tile.size))
-    view.image = image
-    view.imageScaling = .scaleProportionallyUpOrDown
-    tile.contentView = view
-    tile.display()
   }
 
   /// Dock icon click or reopening from Finder opens the app window.
@@ -430,7 +411,6 @@ struct PopoverView: View {
   @ObservedObject var manager: ToolManager
   @ObservedObject private var updater = Updater.shared
   @ObservedObject var state: PopoverState
-  @ObservedObject var connectivity: ConnectivityStatus
   let openSettings: (String?) -> Void
 
   @Environment(\.colorScheme) private var scheme
@@ -457,20 +437,17 @@ struct PopoverView: View {
     VStack(spacing: 10) {
       if updater.bannerVisible { UpdateBanner() }
 
-      // Top navigation strip: segmented icon bar + quick connectivity buttons
-      HStack(alignment: .center, spacing: 8) {
-        if !tabs.isEmpty {
-          HStack(spacing: 2) {
-            ForEach(Array(tabs.enumerated()), id: \.element.descriptor.id) { index, tab in
-              tabButton(tab.descriptor, index: index)
-            }
+      // Top navigation strip: full-width segmented icon bar, tabs share the space evenly
+      if !tabs.isEmpty {
+        HStack(spacing: 2) {
+          ForEach(Array(tabs.enumerated()), id: \.element.descriptor.id) { index, tab in
+            tabButton(tab.descriptor, index: index)
           }
-          .padding(3)
-          .background(tabTrackFill, in: Capsule())
-          .overlay(Capsule().strokeBorder(tabTrackBorder, lineWidth: 0.5))
         }
-        Spacer(minLength: 4)
-        ConnectivityButtons(status: connectivity)
+        .padding(3)
+        .frame(maxWidth: .infinity)
+        .background(tabTrackFill, in: Capsule())
+        .overlay(Capsule().strokeBorder(tabTrackBorder, lineWidth: 0.5))
       }
 
       // Active tool title bar
@@ -589,7 +566,7 @@ struct PopoverView: View {
     .padding(.horizontal, 13)
     .padding(.top, 12)
     .padding(.bottom, 10)
-    .frame(width: tabs.count > 7 ? 404 : 380)
+    .frame(width: 380)
     .frame(maxHeight: .infinity, alignment: .top)
     .onAppear { manager.setVisibleTool(currentID) }
     .onChange(of: currentID) { _, new in manager.setVisibleTool(new) }
@@ -598,7 +575,6 @@ struct PopoverView: View {
   @ViewBuilder
   private func tabButton(_ descriptor: ToolDescriptor, index: Int) -> some View {
     let on = descriptor.id == currentID
-    let itemWidth: CGFloat = tabs.count > 7 ? 31 : (tabs.count > 5 ? 35 : 40)
 
     let btn = Button {
       state.selected = descriptor.id
@@ -606,7 +582,8 @@ struct PopoverView: View {
       ToolIcon(descriptor)
         .font(.system(size: 13.5, weight: .medium))
         .foregroundStyle(on ? Color.white : Color.secondary)
-        .frame(width: itemWidth, height: 27)
+        .frame(maxWidth: .infinity)
+        .frame(height: 28)
         .background {
           if on { Capsule().fill(Color.accentColor) }
         }

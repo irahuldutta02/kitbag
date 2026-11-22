@@ -162,9 +162,12 @@ final class ServicesModel: ObservableObject {
     timer = nil
     guard on else { return }
     Task { await refresh() }
-    timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+    let t = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
       Task { @MainActor in await self?.refresh() }
     }
+    t.tolerance = 1.5
+    RunLoop.main.add(t, forMode: .common)
+    timer = t
   }
 
   private var dockerAppRunning: Bool {

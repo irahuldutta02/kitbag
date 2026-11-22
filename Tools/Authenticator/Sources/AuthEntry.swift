@@ -13,9 +13,11 @@ struct AuthEntry: Codable, Identifiable, Equatable {
   var kind = OTPKind.totp
   var pinned = false
   var created = Date()
+  /// How many times the code was copied; the most used accounts are listed first.
+  var copies = 0
 
   enum CodingKeys: String, CodingKey {
-    case id, title, issuer, secret, digits, period, algorithm, kind = "type", pinned, created
+    case id, title, issuer, secret, digits, period, algorithm, kind = "type", pinned, created, copies
   }
 
   var secretData: Data? { Base32.decode(secret) }
@@ -70,5 +72,6 @@ extension AuthEntry {
     kind = (try? c.decode(OTPKind.self, forKey: .kind)) ?? .totp
     pinned = (try? c.decode(Bool.self, forKey: .pinned)) ?? false
     created = (try? c.decode(Date.self, forKey: .created)) ?? Date()
+    copies = (try? c.decode(Int.self, forKey: .copies)) ?? 0
   }
 }

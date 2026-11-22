@@ -21,13 +21,16 @@ public final class AccessibilityGuide {
       if let url = URL(string: link), NSWorkspace.shared.open(url) { break }
     }
     showPanel()
-    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+    let t = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated {
         guard AXIsProcessTrusted() else { return }
         self?.close()
         onGranted()
       }
     }
+    t.tolerance = 0.5
+    RunLoop.main.add(t, forMode: .common)
+    timer = t
   }
 
   public func close() {

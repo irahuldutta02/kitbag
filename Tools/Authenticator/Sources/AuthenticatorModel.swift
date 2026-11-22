@@ -10,6 +10,9 @@ final class AuthenticatorModel: ObservableObject {
 
   @Published private(set) var entries: [AuthEntry] = []
   @Published private(set) var storageError: String?
+  /// True while the accounts haven't been read from the Keychain yet. After a reinstall macOS asks for
+  /// the Mac password on the first read, so that read waits until the user opens this tab and asks for it.
+  @Published private(set) var locked = false
   /// The account whose code was just copied (for the "Copied" badge).
   @Published private(set) var copiedID: UUID?
   /// What the "Copied" badge says it copied: the next code rather than the current one.
@@ -43,6 +46,9 @@ final class AuthenticatorModel: ObservableObject {
   private let pasteboard: NSPasteboard
   /// Only true once the vault was read successfully: never overwrite something we couldn't read.
   private var loaded = false
+  /// Copy counts as they were when the tab was last opened. The list is sorted by these, so
+  /// copying a code doesn't make the list jump; the new order shows the next time it opens.
+  private var rankedCopies: [UUID: Int] = [:]
   var scanning = false
 
   init(storage: VaultStorage = KeychainVault(), defaults: UserDefaults = .standard, pasteboard: NSPasteboard = .general) {
@@ -56,7 +62,7 @@ final class AuthenticatorModel: ObservableObject {
   }
 
   /// `registerHotKey: false` skips the global shortcut (tests).
-  func start(registerHotKey: Bool = true) {
+  func start(registerHotKey: Bool = true, readVault: Bool = true) {
     if registerHotKey {
       hotKeyEnabled = true
       hotKey.onPress = {
@@ -64,12 +70,27 @@ final class AuthenticatorModel: ObservableObject {
       }
       registerShortcut()
     }
+    // Reading the Keychain here would pop up a password prompt at launch (e.g. right after an update).
+    if readVault { unlock(interactive: true) } else { locked = true }
+  }
+
+  /// Reads the accounts. With `interactive: false` it never shows a password prompt and just stays
+  /// locked if macOS would ask for one; with `true` the system prompt may appear.
+  func unlock(interactive: Bool) {
+    guard !loaded else { return }
     do {
-      if let data = try storage.load() { entries = try Backup.makeDecoder().decode([AuthEntry].self, from: data) }
+      if let data = try storage.load(interactive: interactive) {
+        entries = try Backup.makeDecoder().decode([AuthEntry].self, from: data)
+      }
       loaded = true
+      locked = false
       storageError = nil
+      refreshOrder()
+    } catch is VaultLocked {
+      locked = true
     } catch {
       loaded = false
+      locked = true
       storageError = "Couldn't open your accounts. \(error.localizedDescription)"
     }
   }
@@ -124,10 +145,18 @@ final class AuthenticatorModel: ObservableObject {
     }
     return list.sorted {
       if $0.pinned != $1.pinned { return $0.pinned }
+      let a = rankedCopies[$0.id] ?? 0, b = rankedCopies[$1.id] ?? 0
+      if a != b { return a > b }
       let order = $0.primary.localizedCaseInsensitiveCompare($1.primary)
       return order == .orderedSame
         ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending : order == .orderedAscending
     }
+  }
+
+  /// Applies the latest copy counts to the order. Called when the tab opens.
+  func refreshOrder() {
+    rankedCopies = Dictionary(entries.map { ($0.id, $0.copies) }, uniquingKeysWith: { a, _ in a })
+    objectWillChange.send()
   }
 
   func entry(_ id: UUID) -> AuthEntry? { entries.first { $0.id == id } }
@@ -207,6 +236,7 @@ final class AuthenticatorModel: ObservableObject {
     // The marker clipboard histories (including Kitbag's own) use to skip passwords.
     pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
     let change = pasteboard.changeCount
+    countCopy(e.id)
     copiedID = e.id
     copiedNext = next
     copiedCode = code
@@ -220,6 +250,15 @@ final class AuthenticatorModel: ObservableObject {
         pb.clearContents()
       }
     }
+  }
+
+  /// Counts a copy and saves it quietly: it doesn't re-sort the list or count as a change to back up.
+  private func countCopy(_ id: UUID) {
+    guard loaded, let i = entries.firstIndex(where: { $0.id == id }) else { return }
+    var next = entries
+    next[i].copies += 1
+    guard let data = try? Backup.makeEncoder().encode(next), (try? storage.save(data)) != nil else { return }
+    entries = next
   }
 
   // MARK: Backup

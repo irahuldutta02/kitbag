@@ -376,7 +376,9 @@ enum Proc {
         }
         pipe.fileHandleForReading.readabilityHandler = { h in
           let d = h.availableData
-          if !d.isEmpty { emit(d) }
+          // EOF reads as empty data forever; stop listening or this handler spins a CPU core.
+          if d.isEmpty { h.readabilityHandler = nil; return }
+          emit(d)
         }
         do { try p.run() } catch {
           pipe.fileHandleForReading.readabilityHandler = nil

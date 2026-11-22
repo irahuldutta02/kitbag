@@ -111,7 +111,7 @@ public struct ToolDescriptor: Identifiable {
   public let name: LocalizedStringKey
   public let symbol: String
   public let defaultEnabled: Bool
-  /// For brands with no SF Symbol (e.g. Bluetooth); shown instead of `symbol` when set.
+  /// For brands with no SF Symbol (e.g. an app's own logo); shown instead of `symbol` when set.
   public let customIcon: (@MainActor () -> AnyView)?
   /// For integrations with another app: its bundle id. The tool is offered only if that app is installed.
   public let requiresApp: String?
@@ -128,7 +128,7 @@ public struct ToolDescriptor: Identifiable {
   public let make: @MainActor () -> any KitbagTool
 
   public init(
-    id: String, name: LocalizedStringKey, symbol: String, defaultEnabled: Bool = true,
+    id: String, name: LocalizedStringKey, symbol: String, defaultEnabled: Bool = false,
     customIcon: (@MainActor () -> AnyView)? = nil, requiresApp: String? = nil, brewCask: String? = nil,
     showsTab: Bool = true, showsMenuTab: Bool = true, listedInApps: Bool = false,
     appsCategory: String? = nil,

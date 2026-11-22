@@ -20,7 +20,11 @@ public enum Shell {
     _ path: String, _ args: [String], env: [String: String] = [:],
     onOutput: (@MainActor @Sendable (String) -> Void)? = nil
   ) async -> Result? {
-    await withCheckedContinuation { cont in
+    let label = (path as NSString).lastPathComponent + " " + args.prefix(3).joined(separator: " ")
+    Diagnostics.event("shell.start", label)
+    let began = Date()
+    defer { Diagnostics.event("shell.end", "\(label) (\(String(format: "%.1f", Date().timeIntervalSince(began)))s)") }
+    return await withCheckedContinuation { cont in
       DispatchQueue.global().async {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
@@ -37,7 +41,9 @@ public enum Shell {
         }
         pipe.fileHandleForReading.readabilityHandler = { h in
           let d = h.availableData
-          if !d.isEmpty { emit(d) }
+          // EOF reads as empty data forever; stop listening or this handler spins a CPU core.
+          if d.isEmpty { h.readabilityHandler = nil; return }
+          emit(d)
         }
         do { try p.run() } catch {
           pipe.fileHandleForReading.readabilityHandler = nil

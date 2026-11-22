@@ -28,11 +28,13 @@ final class OverlayState: ObservableObject {
 final class DictationOverlay {
   let state = OverlayState()
   private var panel: NSPanel?
+  private var shownCount = 0  // bumped by show(), so a stale hide doesn't tear down a new pill
 
   /// Extra transparent margin around the pill so its drop shadow is never clipped.
   private static let shadowInset: CGFloat = 14
 
   func show() {
+    shownCount += 1
     if panel == nil {
       let host = NSHostingView(rootView: OverlayView(state: state))
       host.frame = NSRect(origin: .zero, size: panelSize(for: .listening))
@@ -87,12 +89,21 @@ final class DictationOverlay {
 
   func hide() {
     guard let p = panel else { return }
+    let count = shownCount
     NSAnimationContext.runAnimationGroup(
       { ctx in
         ctx.duration = 0.2
         p.animator().alphaValue = 0
       },
-      completionHandler: { MainActor.assumeIsolated { p.orderOut(nil) } })
+      completionHandler: {
+        MainActor.assumeIsolated {
+          guard self.shownCount == count else { return }  // shown again meanwhile
+          p.orderOut(nil)
+          // Drop the view so its pulsing dot can't keep animating (and burning CPU) while hidden.
+          p.contentView = nil
+          if self.panel === p { self.panel = nil }
+        }
+      })
   }
 
   private func panelSize(for mode: OverlayState.Mode) -> NSSize {

@@ -20,7 +20,9 @@ struct SettingsView: View {
     }
   }
 
-  private static let productivityIDs = ["fileshelf", "clipboard", "authenticator", "dictation"]
+  private static let productivityIDs = [
+    "fileshelf", "clipboard", "authenticator", "videoplayer", "dictation",
+  ]
 
   private var productivityTools: [ToolDescriptor] {
     tools.filter { Self.productivityIDs.contains($0.id) }
@@ -95,10 +97,6 @@ struct SettingsView: View {
           ForEach(systemTools) { d in
             toolRow(d)
           }
-          row(id: "connectivity", title: Text("Connectivity"), tint: .blue, enabledDot: nil) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
-              .font(.system(size: 11.5, weight: .semibold))
-          }
           row(id: "providers", title: Text("Providers"), tint: .indigo, enabledDot: nil) {
             Image(systemName: "cpu")
               .font(.system(size: 11.5, weight: .semibold))
@@ -112,6 +110,10 @@ struct SettingsView: View {
       row(id: "general", title: Text("General"), tint: .gray, enabledDot: nil) {
         Image(systemName: "gearshape.fill")
           .font(.system(size: 12.5, weight: .medium))
+      }
+      row(id: "diagnostics", title: Text("Diagnostics"), tint: .orange, enabledDot: nil) {
+        Image(systemName: "waveform.path.ecg")
+          .font(.system(size: 11.5, weight: .semibold))
       }
     }
     .padding(10)
@@ -188,12 +190,12 @@ struct SettingsView: View {
         .overlay(alignment: .bottom) { ToastOverlay() }
       } else {
       Form {
-        if nav.page == "connectivity" {
-          ConnectivityPage()
-        } else if nav.page == "general" {
+        if nav.page == "general" {
           AppearanceSection()
           LoginItemSection()
           UpdatesSection()
+        } else if nav.page == "diagnostics" {
+          DiagnosticsPage()
         } else if let d = tools.first(where: { $0.id == nav.page }) {
           ToolPage(descriptor: d, manager: manager)
           // Add-ons without a tab of their own (Blip) live on the File Shelf page.
@@ -229,7 +231,7 @@ enum Look {
     [
       "fileshelf": .blue, "systemmonitor": .green, "speedtest": .orange, "devtools": .purple,
       "audio": .pink, "blip": .indigo, "apps": .teal, "dictation": .red, "clipboard": .cyan,
-      "authenticator": .mint,
+      "authenticator": .mint, "videoplayer": Color(red: 0.96, green: 0.35, blue: 0.24),
     ][id] ?? .gray
   }
 
@@ -249,10 +251,12 @@ enum Look {
       "Start or quit Google Drive, Proton Drive, Wispr Flow, OpenWhispr, and FineTune from one place.",
     "dictation":
       "Hold a key, speak, and have your words transcribed, cleaned up, and pasted where you type.",
+    "videoplayer":
+      "Play local MKV, MP4, and HEVC videos in your chosen browser with audio tracks, subtitles, and hardware upscaling.",
   ]
 
   /// Tools whose settings view builds its own sections instead of one options section.
-  static let ownSections: Set<String> = ["dictation", "authenticator", "apps"]
+  static let ownSections: Set<String> = ["dictation", "authenticator", "apps", "videoplayer"]
 
   static let optionsTitle: [String: LocalizedStringKey] = [
     "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Runtimes & Services",
@@ -489,55 +493,6 @@ private struct AppearanceSection: View {
       Text("Appearance")
     } footer: {
       Text("Adjusts how see-through the Settings window backdrop and popover surfaces appear.")
-    }
-  }
-}
-
-/// The Wi-Fi and Bluetooth buttons in the menu pop-up: one switch each.
-private struct ConnectivityPage: View {
-  @ObservedObject private var layout = MenuLayout.shared
-
-  var body: some View {
-    Section {
-      HStack(spacing: 14) {
-        Look.tile(
-          Image(systemName: "antenna.radiowaves.left.and.right")
-            .font(.system(size: 21, weight: .semibold)),
-          .blue,
-          size: 50
-        )
-        VStack(alignment: .leading, spacing: 3) {
-          Text("Connectivity").font(.title3.weight(.semibold))
-          Text(
-            "Show quick Wi-Fi and Bluetooth status buttons in the corner of the menu bar popover."
-          )
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        }
-      }
-      .padding(.vertical, 4)
-    }
-    Section {
-      row(MenuLayout.wifi, "Wi-Fi") {
-        Image(systemName: "wifi").font(.system(size: 12, weight: .semibold))
-      }
-      row(MenuLayout.bluetooth, "Bluetooth") {
-        BluetoothGlyph().frame(width: 8, height: 13)
-      }
-    } header: {
-      Text("Quick Buttons")
-    }
-  }
-
-  private func row<I: View>(
-    _ id: String, _ name: LocalizedStringKey, @ViewBuilder icon: () -> I
-  ) -> some View {
-    Toggle(isOn: Binding(get: { layout.isShown(id) }, set: { layout.setShown(id, $0) })) {
-      HStack(spacing: 10) {
-        Look.tile(icon(), .blue, size: 24)
-        Text(name)
-      }
     }
   }
 }

@@ -17,6 +17,14 @@ struct AuthenticatorView: View {
 
   var body: some View {
     let list = model.filtered(ui.query)
+    return content(list)
+      .onAppear {
+        model.unlock(interactive: false)  // silent; stays locked if macOS would ask for a password
+        model.refreshOrder()
+      }
+  }
+
+  private func content(_ list: [AuthEntry]) -> some View {
     VStack(alignment: .leading, spacing: 9) {
       HStack(spacing: 8) {
         SearchFieldBar(
@@ -62,7 +70,9 @@ struct AuthenticatorView: View {
           .foregroundStyle(KitbagUI.warning)
       }
 
-      if model.entries.isEmpty {
+      if model.locked {
+        LockedState(model: model)
+      } else if model.entries.isEmpty {
         if !ui.adding { EmptyState(model: model) }
       } else if list.isEmpty {
         VStack(spacing: 6) {
@@ -188,6 +198,35 @@ private struct AddChoices: View {
   }
 }
 
+private struct LockedState: View {
+  let model: AuthenticatorModel
+  var body: some View {
+    VStack(spacing: 9) {
+      ZStack {
+        Circle().fill(Color.accentColor.opacity(0.11)).frame(width: 46, height: 46)
+        Image(systemName: "lock.fill")
+          .font(.system(size: 20))
+          .foregroundStyle(Color.accentColor)
+      }
+      Text("Your accounts are locked").font(.callout.weight(.semibold))
+      Text("Your accounts are safe in your Keychain. macOS needs your Mac password once to let this version of Kitbag read them.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      Button {
+        model.unlock(interactive: true)
+      } label: {
+        Label("Unlock Accounts", systemImage: "key.fill")
+      }
+      .buttonStyle(.borderedProminent)
+      .controlSize(.small)
+      .padding(.top, 2)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 16)
+  }
+}
+
 private struct EmptyState: View {
   let model: AuthenticatorModel
   var body: some View {
@@ -258,6 +297,19 @@ private struct EntryRow: View {
                 Image(systemName: "pin.fill")
                   .font(.system(size: 8.5))
                   .foregroundStyle(KitbagUI.warning)
+              }
+              if entry.copies > 0 {
+                HStack(spacing: 2) {
+                  Image(systemName: "doc.on.doc.fill").font(.system(size: 7))
+                  Text(entry.copies > 999 ? "999+" : "\(entry.copies)")
+                    .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(Capsule().fill(scheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.07)))
+                .help(entry.copies == 1 ? "Used 1 time" : "Used \(entry.copies) times")
+                .accessibilityLabel("Used \(entry.copies) times")
               }
             }
             if let s = entry.secondary {

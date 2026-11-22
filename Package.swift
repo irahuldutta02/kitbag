@@ -46,12 +46,16 @@ let package = Package(
     .testTarget(
       name: "AuthenticatorTests", dependencies: ["Authenticator"], path: "Tools/Authenticator/Tests"),
 
+    .target(name: "VideoPlayer", dependencies: ["KitbagCore"], path: "Tools/VideoPlayer/Sources"),
+    .testTarget(
+      name: "VideoPlayerTests", dependencies: ["VideoPlayer"], path: "Tools/VideoPlayer/Tests"),
+
     .executableTarget(
       name: "Kitbag",
       dependencies: [
         "KitbagCore", "FileShelf", "SystemMonitor", "SpeedTest", "DevTools",
         "Audio",
-        "Blip", "Apps", "Dictation", "Clipboard", "Authenticator",
+        "Blip", "Apps", "Dictation", "Clipboard", "Authenticator", "VideoPlayer",
       ],
       path: "App/Sources"),
   ],

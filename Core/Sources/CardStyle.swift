@@ -88,6 +88,7 @@ private struct HoverHighlight: ViewModifier {
   let tint: Color?
   @StateObject private var hover = UIBox(false)
   @Environment(\.colorScheme) private var scheme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   func body(content: Content) -> some View {
     let hovering = hover.value
@@ -106,7 +107,7 @@ private struct HoverHighlight: ViewModifier {
         }
       }
       .onHover { hover.value = $0 }
-      .animation(.easeOut(duration: 0.12), value: hovering)
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)
   }
 }
 

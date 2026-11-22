@@ -21,6 +21,9 @@ enum AppCategory: String, CaseIterable, Identifiable {
 
   var title: LocalizedStringKey { LocalizedStringKey(name) }
 
+  /// Only one thing in the category can be on at a time (two dictation apps would fight over the hotkey).
+  var isExclusive: Bool { self == .dictation }
+
   var symbol: String {
     switch self {
     case .dictation: return "waveform"
@@ -296,8 +299,28 @@ final class AppsModel: ObservableObject {
     return i
   }
 
+  /// Switches one of Kitbag's own tools. In an exclusive category (dictation) the other tools and apps go off.
+  func setSwitch(_ sw: ToolSwitch, on: Bool) {
+    if on, let cat = sw.category.flatMap(AppCategory.init(rawValue:)), cat.isExclusive {
+      turnOffOthers(in: cat, except: sw.id)
+    }
+    sw.set(on)
+  }
+
+  private func turnOffOthers(in cat: AppCategory, except id: String) {
+    for other in toolSwitches where other.id != id && other.isOn
+      && other.category.flatMap(AppCategory.init(rawValue:)) == cat
+    {
+      other.set(false)
+    }
+    for app in Self.catalog where app.id != id && app.category == cat && running.contains(app.id) {
+      set(app, on: false)
+    }
+  }
+
   /// Starts or quits the app without taking focus from what you're doing.
   func set(_ app: ManagedApp, on: Bool) {
+    if on && app.category.isExclusive { turnOffOthers(in: app.category, except: app.id) }
     guard !busy.contains(app.id) else { return }
     busy.insert(app.id)
     notice = nil
@@ -307,7 +330,9 @@ final class AppsModel: ObservableObject {
         guard let url = url(app) else { return notice = String(localized: "\(app.name) isn't installed.") }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = false
-        config.hides = true  // start in the background; some apps (Wispr Flow) open a window otherwise
+        // Only dictation apps (Wispr Flow) open a window we need to keep away; hiding other apps
+        // (e.g. menu bar apps like FineTune) would also close their menu bar popover.
+        config.hides = app.background
         do { _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config) } catch {
           notice = error.localizedDescription
         }
@@ -316,11 +341,6 @@ final class AppsModel: ObservableObject {
           setGuarded(app, true)
           for _ in 0..<15 {
             for r in NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID) { putAway(r) }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-          }
-        } else {
-          for _ in 0..<15 {
-            NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).forEach { $0.hide() }
             try? await Task.sleep(nanoseconds: 300_000_000)
           }
         }

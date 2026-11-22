@@ -9,6 +9,7 @@ import FileShelf
 import KitbagCore
 import SpeedTest
 import SystemMonitor
+import VideoPlayer
 
 /// The one place tools are registered. Add a new tool's descriptor here.
 enum AllTools {
@@ -16,6 +17,7 @@ enum AllTools {
     FileShelfTool.descriptor,
     ClipboardTool.descriptor,
     AuthenticatorTool.descriptor,
+    VideoPlayerTool.descriptor,
     SystemMonitorTool.descriptor,
     SpeedTestTool.descriptor,
     DevToolsTool.descriptor,

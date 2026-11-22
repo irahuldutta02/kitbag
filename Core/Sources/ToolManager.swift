@@ -42,8 +42,28 @@ public final class ToolManager: ObservableObject {
     return descriptors.first { $0.id == id }?.defaultEnabled ?? false
   }
 
+  /// Tools used to default to ON. New users now start with everything OFF, so people who already
+  /// had the app keep their previous state (pinned once, as explicit values).
+  private func migrateDefaultsForExistingUsers() {
+    let marker = "kitbag.defaultsOffMigrated"
+    guard defaults.object(forKey: marker) == nil else { return }
+    defer { defaults.set(true, forKey: marker) }
+    var keys = Set(defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("kitbag.") })
+    if defaults === UserDefaults.standard, let id = Bundle.main.bundleIdentifier,
+      let domain = UserDefaults.standard.persistentDomain(forName: id)
+    {
+      keys.formUnion(domain.keys)
+    }
+    keys.remove(marker)
+    guard !keys.isEmpty else { return }  // fresh install: leave every tool off
+    for d in descriptors where defaults.object(forKey: key(d.id)) == nil {
+      defaults.set(true, forKey: key(d.id))
+    }
+  }
+
   /// Creates instances for enabled tools only.
   public func bootstrap() {
+    migrateDefaultsForExistingUsers()
     startWatching()
     for d in descriptors where isEnabled(d.id) && isAvailable(d) { activate(d) }
   }
@@ -91,6 +111,7 @@ public final class ToolManager: ObservableObject {
   /// Only the tool whose tab is showing counts as visible; nil means the menu is closed.
   public func setVisibleTool(_ id: String?) {
     visibleToolID = id
+    Diagnostics.event("tool.visible", id ?? "(menu closed)")
     for (toolID, tool) in active { tool.menuVisibilityChanged(toolID == id) }
   }
 
@@ -114,6 +135,7 @@ public final class ToolManager: ObservableObject {
   private func activate(_ d: ToolDescriptor) {
     guard active[d.id] == nil else { return }
     let tool = d.make()
+    Diagnostics.event("tool.start", d.id)
     do {
       try tool.start()
       active[d.id] = tool
@@ -129,6 +151,7 @@ public final class ToolManager: ObservableObject {
   }
 
   private func deactivate(_ id: String) {
+    Diagnostics.event("tool.stop", id)
     active.removeValue(forKey: id)?.stop()
     errors[id] = nil
     publishFileSenders()

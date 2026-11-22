@@ -301,6 +301,7 @@ final class DictationModel: ObservableObject {
       case "gemma":
         if await local.ensureServer() {
           do {
+            local.noteLoaded(settings.gemmaModel)
             let r = try await OllamaClient.refine(raw, model: settings.gemmaModel, prompt: prompt)
             text = r.text
             usage = r.usage

@@ -141,18 +141,6 @@ private final class FakeTool: KitbagTool {
     #expect(made["a"]?.senders.map(\.id) == ["x"])
   }
 
-  @Test func menuExtraMatchingUsesIdentifierThenTitle() {
-    #expect(
-      MenuExtra.matches(
-        identifier: "com.apple.menuextra.wifi", text: nil, wantedID: "com.apple.menuextra.wifi",
-        wantedText: "Wi-Fi"))
-    #expect(
-      MenuExtra.matches(
-        identifier: nil, text: "Wi-Fi, connected", wantedID: "x", wantedText: "wi-fi"))
-    #expect(
-      !MenuExtra.matches(identifier: "other", text: "Battery", wantedID: "x", wantedText: "Wi-Fi"))
-  }
-
   @Test func enabledStatePersists() {
     ToolManager(descriptors: [descriptor("a")], defaults: defaults).setEnabled("a", true)
     let b = ToolManager(descriptors: [descriptor("a")], defaults: defaults)

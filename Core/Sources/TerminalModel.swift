@@ -45,7 +45,7 @@ public final class TerminalModel: ObservableObject {
     p.standardError = pipe
     pipe.fileHandleForReading.readabilityHandler = { [weak self] h in
       let d = h.availableData
-      guard !d.isEmpty else { return }
+      guard !d.isEmpty else { h.readabilityHandler = nil; return }  // EOF: stop, or it spins at 100% CPU
       let s = String(decoding: d, as: UTF8.self)
       Task { @MainActor in self?.echo(s) }
     }

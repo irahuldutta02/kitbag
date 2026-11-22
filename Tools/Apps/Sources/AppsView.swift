@@ -98,7 +98,7 @@ struct AppsView: View {
         }
       }
       Spacer()
-      Toggle(sw.name, isOn: Binding(get: { sw.isOn }, set: { sw.set($0) }))
+      Toggle(sw.name, isOn: Binding(get: { sw.isOn }, set: { model.setSwitch(sw, on: $0) }))
         .labelsHidden()
         .toggleStyle(.switch)
         .controlSize(.small)

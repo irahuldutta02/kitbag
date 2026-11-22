@@ -1,11 +1,22 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Where the accounts are kept. Production uses the Keychain; tests use a file.
 protocol VaultStorage {
   func load() throws -> Data?
+  /// `interactive: false` must never show a system password prompt: it throws `VaultLocked` instead.
+  func load(interactive: Bool) throws -> Data?
   func save(_ data: Data) throws
 }
+
+extension VaultStorage {
+  func load(interactive: Bool) throws -> Data? { try load() }
+}
+
+/// The Keychain item exists but macOS wants the user's password before handing it over
+/// (typical right after the app was reinstalled or updated).
+struct VaultLocked: Error {}
 
 struct VaultError: LocalizedError {
   let message: String
@@ -26,13 +37,21 @@ struct KeychainVault: VaultStorage {
     return VaultError(message: "Keychain: \(text)")
   }
 
-  func load() throws -> Data? {
+  func load() throws -> Data? { try load(interactive: true) }
+
+  func load(interactive: Bool) throws -> Data? {
     var q = query
     q[kSecReturnData as String] = true
     q[kSecMatchLimit as String] = kSecMatchLimitOne
+    if !interactive {
+      let ctx = LAContext()
+      ctx.interactionNotAllowed = true
+      q[kSecUseAuthenticationContext as String] = ctx
+    }
     var out: CFTypeRef?
     let status = SecItemCopyMatching(q as CFDictionary, &out)
     if status == errSecItemNotFound { return nil }
+    if !interactive, status == errSecInteractionNotAllowed || status == errSecAuthFailed { throw VaultLocked() }
     guard status == errSecSuccess, let data = out as? Data else { throw fail(status) }
     return data
   }
