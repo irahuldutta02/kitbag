@@ -47,3 +47,81 @@ import Testing
     #expect(VersionsModel.failureReason("Version '99.1.1' not found - try `nvm ls-remote`", k: .node, version: "99.1.1").contains("doesn't exist"))
   }
 }
+
+@MainActor @Suite struct PortManagerTests {
+  @Test func parsesLsofOutput() {
+    let out = "p100\ncnode\nn*:3000\nn[::1]:3000\np200\ncpostgres\nn127.0.0.1:5432\n"
+    let ports = PortManagerModel.parse(out)
+    #expect(ports.map(\.port) == [3000, 3000, 5432])
+    #expect(ports.first?.command == "node")
+    #expect(ports.last?.pid == 200)
+  }
+
+  @Test func groupsHoldOnePortOnce() {
+    let m = PortManagerModel(defaults: UserDefaults(suiteName: "kitbag.test.ports")!)
+    let a = m.addGroup("Web")!
+    let b = m.addGroup("DB")!
+    m.assign(port: 3000, to: a)
+    m.assign(port: 3000, to: b)
+    #expect(m.groups.first { $0.id == a.id }?.ports == [])
+    #expect(m.groups.first { $0.id == b.id }?.ports == [3000])
+    m.deleteGroup(a)
+    m.deleteGroup(b)
+  }
+}
+
+@MainActor @Suite struct PortDropTests {
+  @Test func droppingMovesPortBetweenGroups() {
+    let m = PortManagerModel(defaults: UserDefaults(suiteName: "kitbag.test.ports.drop")!)
+    let a = m.addGroup("Web")!
+    let b = m.addGroup("DB")!
+    #expect(m.drop([PortManagerModel.dragPayload(3000)], on: a))
+    #expect(m.drop([PortManagerModel.dragPayload(3000)], on: b))
+    #expect(m.group(of: 3000)?.id == b.id)
+    #expect(m.drop([PortManagerModel.dragPayload(3000)], on: nil))
+    #expect(m.group(of: 3000) == nil)
+    #expect(!m.drop(["hello"], on: a))
+  }
+}
+
+@MainActor @Suite struct ProcessLabelTests {
+  @Test func nodeServerUsesProjectFolder() {
+    let l = PortManagerModel.describe(
+      args: "node /Users/me/code/shop-api/node_modules/.bin/vite dev --port 3000",
+      cwd: "/Users/me/code/shop-api", fallback: "node")
+    #expect(l.title == "shop-api")
+    #expect(l.detail.hasPrefix("node vite dev"))
+  }
+
+  @Test func appsUseBundleName() {
+    let l = PortManagerModel.describe(
+      args: "/Applications/Docker Desktop.app/Contents/MacOS/com.docker.backend serve",
+      cwd: "/", fallback: "com.docke")
+    #expect(l.title == "Docker Desktop")
+  }
+
+  @Test func plainProgramUsesItsName() {
+    let l = PortManagerModel.describe(args: "/usr/sbin/rapportd", cwd: "/", fallback: "rapportd")
+    #expect(l.title == "rapportd")
+  }
+}
+
+@MainActor @Suite struct PortRenameTests {
+  @Test func portNamesPersistAndReset() {
+    let d = UserDefaults(suiteName: "kitbag.test.ports.names")!
+    d.removePersistentDomain(forName: "kitbag.test.ports.names")
+    let m = PortManagerModel(defaults: d)
+    m.setName("  Shop API ", for: 3000)
+    #expect(PortManagerModel(defaults: d).portNames[3000] == "Shop API")
+    m.setName("", for: 3000)
+    #expect(PortManagerModel(defaults: d).portNames[3000] == nil)
+  }
+
+  @Test func groupRename() {
+    let m = PortManagerModel(defaults: UserDefaults(suiteName: "kitbag.test.ports.rename")!)
+    let g = m.addGroup("Old")!
+    m.renameGroup(g, to: " New ")
+    #expect(m.groups.first { $0.id == g.id }?.name == "New")
+    m.deleteGroup(g)
+  }
+}

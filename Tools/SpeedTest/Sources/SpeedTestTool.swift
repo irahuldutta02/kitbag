@@ -4,7 +4,8 @@ import SwiftUI
 @MainActor
 public final class SpeedTestTool: KitbagTool {
   public static let descriptor = ToolDescriptor(
-    id: "speedtest", name: "Speed Test", symbol: "arrow.up.arrow.down", make: { SpeedTestTool() })
+    id: "speedtest", name: "Speed Test", symbol: "arrow.up.arrow.down", showsMenuTab: false, popsOut: true,
+    make: { SpeedTestTool() })
 
   private var model: SpeedTestModel?
   public init() {}

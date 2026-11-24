@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 public final class AppsTool: KitbagTool {
   public static let descriptor = ToolDescriptor(
-    id: "apps", name: "Apps", symbol: "power", make: { AppsTool() })
+    id: "apps", name: "Quick Toggle", symbol: "power", make: { AppsTool() })
 
   private var model: AppsModel?
   public init() {}

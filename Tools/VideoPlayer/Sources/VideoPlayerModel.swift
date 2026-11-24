@@ -120,7 +120,7 @@ public final class VideoPlayerModel: ObservableObject {
   }
 
   @discardableResult
-  public func ensureServerRunning() async -> UInt16? {
+  public func ensureServerRunning(keepAlive: Bool = false) async -> UInt16? {
     if let server, server.isRunning, server.currentPort > 0 {
       return server.currentPort
     }
@@ -131,7 +131,7 @@ public final class VideoPlayerModel: ObservableObject {
 
     do {
       let port = try await server.start(port: UInt16(settings.port))
-      if settings.serverMode == .onDemand {
+      if settings.serverMode == .onDemand && !keepAlive {
         server.scheduleAutoStopIfNeeded(graceSeconds: 45)
       }
       return port
@@ -139,6 +139,11 @@ public final class VideoPlayerModel: ObservableObject {
       errorMessage = "Port \(settings.port) couldn't be opened (\(error.localizedDescription)). Try another port in Settings."
       return nil
     }
+  }
+
+  /// Starts the server and leaves it running (no idle auto-stop), for when the user switches the tool on.
+  public func startServerAndKeep() {
+    Task { _ = await ensureServerRunning(keepAlive: true) }
   }
 
   public func startServerManually() {

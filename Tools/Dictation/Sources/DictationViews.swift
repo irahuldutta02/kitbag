@@ -18,7 +18,7 @@ struct DictationView: View {
         )
         VStack(alignment: .leading, spacing: 1) {
           Text(statusTitle).font(.callout.weight(.semibold))
-          Text(statusText).font(.caption).foregroundStyle(.secondary)
+          Text(statusText).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
         }
         Spacer()
         Button(model.phase == .listening ? "Stop" : "Start") { model.toggle() }
@@ -39,38 +39,78 @@ struct DictationView: View {
 
       TodaySummary()
 
-      if !model.lastText.isEmpty {
-        Divider().opacity(0.45)
-        HStack {
-          SectionEyebrow("Last Dictation")
-          Spacer()
-          Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(model.lastText, forType: .string)
-            withAnimation { copied.value = true }
-            Task {
-              try? await Task.sleep(nanoseconds: 1_200_000_000)
-              withAnimation { copied.value = false }
-            }
-          } label: {
-            Label(
-              copied.value ? "Copied" : "Copy",
-              systemImage: copied.value ? "checkmark" : "doc.on.doc"
-            )
-            .font(.caption.weight(.medium))
-            .foregroundStyle(copied.value ? KitbagUI.success : .secondary)
-          }
-          .buttonStyle(.plain)
-        }
-        Text(model.lastText)
-          .font(.callout)
-          .lineLimit(5)
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
+      Divider().opacity(0.45)
+      HistoryList()
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .card(padding: 11)
+  }
+
+  /// The last 50 dictations, each with a copy button.
+  private struct HistoryList: View {
+    @ObservedObject var stats = DictationStats.shared
+    @StateObject private var copied = UIBox<UUID?>(nil)
+
+    var body: some View {
+      let items = stats.history
+      VStack(alignment: .leading, spacing: 6) {
+        SectionEyebrow("Recent dictations")
+        if items.isEmpty {
+          VStack(spacing: 6) {
+            Image(systemName: "text.bubble")
+              .font(.system(size: 22, weight: .light))
+              .foregroundStyle(.tertiary)
+            Text("Nothing yet. Your last 50 dictations show up here.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+          }
+          .frame(maxWidth: .infinity)
+          .frame(height: 180)
+        } else {
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+              ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                if i > 0 { Divider().opacity(0.4) }
+                row(item)
+              }
+            }
+          }
+          .frame(height: 180)
+        }
+      }
+    }
+
+    private func row(_ item: DictationSession) -> some View {
+      HStack(alignment: .top, spacing: 8) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(item.text ?? "")
+            .font(.callout)
+            .lineLimit(3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          Text(item.date, format: .dateTime.month(.abbreviated).day().hour().minute())
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        Button {
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(item.text ?? "", forType: .string)
+          withAnimation { copied.value = item.id }
+          Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            withAnimation { if copied.value == item.id { copied.value = nil } }
+          }
+        } label: {
+          Image(systemName: copied.value == item.id ? "checkmark" : "doc.on.doc")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(copied.value == item.id ? KitbagUI.success : .secondary)
+            .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .help("Copy")
+      }
+      .padding(.vertical, 6)
+    }
   }
 
   private struct TodaySummary: View {

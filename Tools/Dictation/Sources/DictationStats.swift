@@ -13,6 +13,8 @@ struct DictationSession: Codable, Identifiable {
   var outputTokens: Int
   /// Cost reported by Claude Code (what the same call would cost on the API).
   var cost: Double
+  /// What was pasted. Kept only for the latest 50 dictations (see `DictationStats.historyLimit`).
+  var text: String?
 }
 
 /// Totals over some sessions.
@@ -62,8 +64,21 @@ final class DictationStats: ObservableObject {
     }
   }
 
+  static let historyLimit = 50
+
+  /// The latest dictations that still have their text, newest first.
+  var history: [DictationSession] {
+    Array(sessions.reversed().filter { !($0.text ?? "").isEmpty }.prefix(Self.historyLimit))
+  }
+
   func add(_ s: DictationSession) {
     sessions.append(s)
+    // Only the latest 50 keep their text; older entries keep just their numbers.
+    var kept = 0
+    for i in sessions.indices.reversed() where sessions[i].text != nil {
+      kept += 1
+      if kept > Self.historyLimit { sessions[i].text = nil }
+    }
     save()
   }
 

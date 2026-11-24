@@ -9,6 +9,7 @@ public final class VideoPlayerTool: KitbagTool {
     id: "videoplayer",
     name: "Video Player",
     symbol: "play.rectangle.fill",
+    showsMenuTab: false, listedInApps: true, appsCategory: "media", popsOut: true,
     make: { VideoPlayerTool() }
   )
 
@@ -20,6 +21,9 @@ public final class VideoPlayerTool: KitbagTool {
     m.start()
     model = m
   }
+
+  /// Switching Video Player on from Quick Toggle (or the Apps grid) starts the server straight away.
+  public func switchedOnByUser() { model?.startServerAndKeep() }
 
   public func stop() {
     model?.stop()

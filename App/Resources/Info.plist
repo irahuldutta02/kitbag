@@ -27,7 +27,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Kitbag uses the camera only to read an authenticator QR code you hold up to it.</string>
+	<string>Kitbag uses the camera to read an authenticator QR code you hold up to it, and to show the Mirror window. Nothing is recorded or saved.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

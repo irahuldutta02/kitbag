@@ -20,6 +20,9 @@ public protocol KitbagTool: AnyObject {
   func receiveFileSenders(_ senders: [FileSender])
   /// Tools that want a quick on/off switch in the Apps tab. The manager passes them to every tool.
   func receiveToolSwitches(_ switches: [ToolSwitch])
+  /// The user just switched this tool on (a switch, or opening it from the Apps grid), as opposed to
+  /// it starting with the app. Tools that run a service (Video Player's server) can start it here.
+  func switchedOnByUser()
 }
 
 /// A tool's on/off switch, offered to the Apps tab so it can sit next to the other apps.
@@ -101,6 +104,7 @@ extension KitbagTool {
   public var fileSenders: [FileSender] { [] }
   public func receiveFileSenders(_ senders: [FileSender]) {}
   public func receiveToolSwitches(_ switches: [ToolSwitch]) {}
+  public func switchedOnByUser() {}
   public func menuVisibilityChanged(_ visible: Bool) {}
   public func makeSettingsView() -> AnyView? { nil }
 }
@@ -125,13 +129,15 @@ public struct ToolDescriptor: Identifiable {
   public let listedInApps: Bool
   /// Optional use-case category id when listed in the Apps tab (e.g. "dictation").
   public let appsCategory: String?
+  /// True if the tool can open its view as a popup window with a pin option (from the Apps tab).
+  public let popsOut: Bool
   public let make: @MainActor () -> any KitbagTool
 
   public init(
     id: String, name: LocalizedStringKey, symbol: String, defaultEnabled: Bool = false,
     customIcon: (@MainActor () -> AnyView)? = nil, requiresApp: String? = nil, brewCask: String? = nil,
     showsTab: Bool = true, showsMenuTab: Bool = true, listedInApps: Bool = false,
-    appsCategory: String? = nil,
+    appsCategory: String? = nil, popsOut: Bool = false,
     make: @escaping @MainActor () -> any KitbagTool
   ) {
     self.customIcon = customIcon
@@ -141,6 +147,7 @@ public struct ToolDescriptor: Identifiable {
     self.showsMenuTab = showsMenuTab
     self.listedInApps = listedInApps
     self.appsCategory = appsCategory
+    self.popsOut = popsOut
     self.id = id
     self.name = name
     self.symbol = symbol
@@ -159,6 +166,8 @@ extension Notification.Name {
   /// Pass `object: toolID` (String).
   public static let kitbagOpenTab = Notification.Name("kitbag.openTab")
   /// Posted to open the Settings window directly to a given page id (`object: pageID` String).
+  /// Posted to open a tool's view as a popup window with a pin option (`object: toolID` String).
+  public static let kitbagOpenPopup = Notification.Name("kitbag.openPopup")
   public static let kitbagOpenSettings = Notification.Name("kitbag.openSettings")
 }
 

@@ -8,6 +8,8 @@ enum AppCategory: String, CaseIterable, Identifiable {
   case dictation
   case cloudStorage
   case audio
+  case utilities
+  case media
 
   var id: String { rawValue }
 
@@ -16,6 +18,8 @@ enum AppCategory: String, CaseIterable, Identifiable {
     case .dictation: return "Dictation"
     case .cloudStorage: return "Cloud Storage"
     case .audio: return "Audio"
+    case .utilities: return "Utilities"
+    case .media: return "Video"
     }
   }
 
@@ -29,6 +33,8 @@ enum AppCategory: String, CaseIterable, Identifiable {
     case .dictation: return "waveform"
     case .cloudStorage: return "icloud"
     case .audio: return "speaker.wave.2"
+    case .utilities: return "wrench.and.screwdriver"
+    case .media: return "play.rectangle"
     }
   }
 }

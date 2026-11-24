@@ -33,6 +33,13 @@ let package = Package(
     .target(name: "Blip", dependencies: ["KitbagCore"], path: "Tools/Blip/Sources"),
     .testTarget(name: "BlipTests", dependencies: ["Blip"], path: "Tools/Blip/Tests"),
 
+    .target(name: "Calculator", dependencies: ["KitbagCore"], path: "Tools/Calculator/Sources"),
+    .testTarget(
+      name: "CalculatorTests", dependencies: ["Calculator"], path: "Tools/Calculator/Tests"),
+
+    .target(name: "Mirror", dependencies: ["KitbagCore"], path: "Tools/Mirror/Sources"),
+    .testTarget(name: "MirrorTests", dependencies: ["Mirror"], path: "Tools/Mirror/Tests"),
+
     .target(name: "Apps", dependencies: ["KitbagCore"], path: "Tools/Apps/Sources"),
     .testTarget(name: "AppsTests", dependencies: ["Apps"], path: "Tools/Apps/Tests"),
 
@@ -55,7 +62,7 @@ let package = Package(
       dependencies: [
         "KitbagCore", "FileShelf", "SystemMonitor", "SpeedTest", "DevTools",
         "Audio",
-        "Blip", "Apps", "Dictation", "Clipboard", "Authenticator", "VideoPlayer",
+        "Blip", "Apps", "Calculator", "Mirror", "Dictation", "Clipboard", "Authenticator", "VideoPlayer",
       ],
       path: "App/Sources"),
   ],

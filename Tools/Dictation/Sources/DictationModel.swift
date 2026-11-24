@@ -327,7 +327,7 @@ final class DictationModel: ObservableObject {
           date: Date(), speakSeconds: spoke, rawWords: DictationStats.words(raw),
           finalWords: DictationStats.words(text), model: usedModel,
           inputTokens: usage?.inputTokens ?? 0, outputTokens: usage?.outputTokens ?? 0,
-          cost: usage?.cost ?? 0))
+          cost: usage?.cost ?? 0, text: text))
       if !Paster.paste(text) {
         flash(String(localized: "Copied. Press ⌘V to paste (allow Accessibility for auto-paste)"), error: true)
       } else if let note {

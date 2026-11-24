@@ -20,16 +20,25 @@ struct SettingsView: View {
     }
   }
 
-  private static let productivityIDs = [
-    "fileshelf", "clipboard", "authenticator", "videoplayer", "dictation",
-  ]
+  /// Kitbag's small apps: one sidebar group. Calculator and Mirror live on the Apps page itself.
+  private static let appsIDs = ["launcher", "dictation", "videoplayer"]
+  private static let includedInApps = ["calculator", "mirror"]
+  private static let includedInDevTools = ["portmanager"]
+  private static let productivityIDs = ["fileshelf", "clipboard", "authenticator"]
+
+  private var appsTools: [ToolDescriptor] {
+    Self.appsIDs.compactMap { id in tools.first { $0.id == id } }
+  }
 
   private var productivityTools: [ToolDescriptor] {
     tools.filter { Self.productivityIDs.contains($0.id) }
   }
 
   private var systemTools: [ToolDescriptor] {
-    tools.filter { !Self.productivityIDs.contains($0.id) }
+    tools.filter {
+      !Self.productivityIDs.contains($0.id) && !Self.appsIDs.contains($0.id)
+        && !Self.includedInApps.contains($0.id) && !Self.includedInDevTools.contains($0.id)
+    }
   }
 
   var body: some View {
@@ -89,6 +98,12 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 2) {
           sidebarHeader("Productivity")
           ForEach(productivityTools) { d in
+            toolRow(d)
+          }
+
+          sidebarHeader("Apps")
+            .padding(.top, 10)
+          ForEach(appsTools) { d in
             toolRow(d)
           }
 
@@ -204,6 +219,17 @@ struct SettingsView: View {
               ToolPage(descriptor: $0, manager: manager, addOn: true)
             }
           }
+          if d.id == "devtools" {
+            ForEach(manager.descriptors.filter { Self.includedInDevTools.contains($0.id) }) {
+              ToolPage(descriptor: $0, manager: manager, addOn: true, addOnTitle: "Included tools")
+            }
+          }
+          // Calculator and Mirror have no sidebar rows of their own; they sit on the Apps page.
+          if d.id == "launcher" {
+            ForEach(manager.descriptors.filter { Self.includedInApps.contains($0.id) }) {
+              ToolPage(descriptor: $0, manager: manager, addOn: true, addOnTitle: "Included apps")
+            }
+          }
         }
       }
       .formStyle(.grouped)
@@ -230,8 +256,8 @@ enum Look {
   static func tint(_ id: String) -> Color {
     [
       "fileshelf": .blue, "systemmonitor": .green, "speedtest": .orange, "devtools": .purple,
-      "audio": .pink, "blip": .indigo, "apps": .teal, "dictation": .red, "clipboard": .cyan,
-      "authenticator": .mint, "videoplayer": Color(red: 0.96, green: 0.35, blue: 0.24),
+      "audio": .pink, "blip": .indigo, "apps": .teal, "launcher": .blue, "dictation": .red, "clipboard": .cyan,
+      "authenticator": .mint, "calculator": .brown, "portmanager": .teal, "mirror": .yellow, "videoplayer": Color(red: 0.96, green: 0.35, blue: 0.24),
     ][id] ?? .gray
   }
 
@@ -247,8 +273,14 @@ enum Look {
     "authenticator":
       "Two-factor codes in your menu bar with QR scanning, Keychain storage, and JSON backups.",
     "clipboard": "Searchable clipboard history. Press ⌥⌘V anywhere to pick an item and paste it.",
+    "launcher":
+      "Dictation, Video Player, Calculator, Speed Test and Mirror. Click one to open it as a pinned popup window.",
     "apps":
-      "Start or quit Google Drive, Proton Drive, Wispr Flow, OpenWhispr, and FineTune from one place.",
+      "Quick on/off switches for Dictation, Video Player, Google Drive, Proton Drive, Wispr Flow, OpenWhispr, and FineTune.",
+    "mirror": "See yourself in a small pinned window. The camera is on only while it is open.",
+    "portmanager": "See what is listening on your ports, group them, and stop a port or a whole group.",
+    "calculator":
+      "A quick calculator. Open it from the Apps tab as a popup window you can pin on top.",
     "dictation":
       "Hold a key, speak, and have your words transcribed, cleaned up, and pasted where you type.",
     "videoplayer":
@@ -260,7 +292,7 @@ enum Look {
 
   static let optionsTitle: [String: LocalizedStringKey] = [
     "fileshelf": "Behavior", "systemmonitor": "Monitoring", "devtools": "Runtimes & Services",
-    "apps": "Apps to show", "dictation": "Dictation", "clipboard": "History",
+    "apps": "Quick Toggle", "dictation": "Dictation", "clipboard": "History",
   ]
 
   static func tile<V: View>(_ icon: V, _ color: Color, size: CGFloat) -> some View {
@@ -277,6 +309,7 @@ private struct ToolPage: View {
   let descriptor: ToolDescriptor
   @ObservedObject var manager: ToolManager
   var addOn = false
+  var addOnTitle: LocalizedStringKey = "Integrations"
   @StateObject private var job = Installer()
 
   private var available: Bool { manager.isAvailable(descriptor) }
@@ -365,8 +398,16 @@ private struct ToolPage: View {
         Look.tile(ToolIcon(descriptor), Look.tint(descriptor.id), size: 28)
         VStack(alignment: .leading, spacing: 1) {
           Text(descriptor.name).font(.callout.weight(.medium))
-          Text(available ? "Adds “Send with Blip” to the shelf" : "Not installed")
-            .font(.caption).foregroundStyle(.secondary)
+          Group {
+            if !available {
+              Text("Not installed")
+            } else if descriptor.id == "blip" {
+              Text("Adds “Send with Blip” to the shelf")
+            } else {
+              Text(Look.blurb[descriptor.id] ?? "")
+            }
+          }
+          .font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
         if available {
@@ -396,7 +437,7 @@ private struct ToolPage: View {
       }
       if let e = job.error { Text(e).font(.caption).foregroundStyle(KitbagUI.danger) }
     } header: {
-      Text("Integrations")
+      Text(addOnTitle)
     }
   }
 

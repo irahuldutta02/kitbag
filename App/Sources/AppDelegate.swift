@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var sizeObservation: NSKeyValueObservation?
   private var appearanceObservation: NSKeyValueObservation?
   private var outsideClickMonitor: Any?
+  private lazy var popups = ToolPopups(manager: manager)
 
   private var isMenuShown: Bool { popover.isShown || (floatingPanel?.isVisible ?? false) }
 
@@ -69,6 +70,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             self.showFloatingPanel()
           }
         }
+      }
+    }
+    NotificationCenter.default.addObserver(forName: .kitbagOpenPopup, object: nil, queue: .main) {
+      [weak self] note in
+      let id = note.object as? String
+      MainActor.assumeIsolated {
+        guard let self, let id else { return }
+        self.closeMenu()
+        self.popups.open(id)
       }
     }
     NotificationCenter.default.addObserver(
@@ -137,7 +147,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     popover.contentViewController = host
     // Keep the popover exactly as tall as the current tab, growing and shrinking with it.
     sizeObservation = host.observe(\.preferredContentSize) { [weak self] host, _ in
-      MainActor.assumeIsolated { self?.popover.contentSize = host.preferredContentSize }
+      MainActor.assumeIsolated {
+        // Resize at once: an animated popover resize makes the tab bar slide when switching tabs.
+        NSAnimationContext.runAnimationGroup { ctx in
+          ctx.duration = 0
+          ctx.allowsImplicitAnimation = false
+          self?.popover.contentSize = host.preferredContentSize
+        }
+      }
     }
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     popover.contentViewController?.view.window?.makeKey()
@@ -589,6 +606,7 @@ struct PopoverView: View {
         }
         .capsuleHoverHighlight(tint: on ? nil : Color.primary)
         .contentShape(Capsule())
+        .transaction { $0.animation = nil }  // no slide or fade of the icon when the tab changes
     }
     .buttonStyle(PressableStyle())
     .help(index < 9 ? "\(Text(descriptor.name)) (⌘\(index + 1))" : "\(Text(descriptor.name))")

@@ -21,7 +21,7 @@ struct AppsView: View {
             .foregroundStyle(.tertiary)
           Text("No apps selected")
             .font(.callout.weight(.semibold))
-          Text("Choose which companion apps to manage in Settings ▸ Apps.")
+          Text("Choose which companion apps to manage in Settings ▸ Quick Toggle.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -62,7 +62,7 @@ struct AppsView: View {
 
       if let s = model.shortcut {
         HStack(spacing: 6) {
-          Text("Open Apps")
+          Text("Open Quick Toggle")
             .font(.caption)
             .foregroundStyle(.secondary)
           Spacer()
@@ -159,7 +159,7 @@ struct AppsSettingsView: View {
     } header: {
       Text("Shortcut")
     } footer: {
-      Text("Press it anywhere to open the Apps tab from the menu bar.")
+      Text("Press it anywhere to open Quick Toggle from the menu bar.")
     }
 
     ForEach(AppCategory.allCases) { category in
@@ -176,11 +176,14 @@ struct AppsSettingsView: View {
     }
   }
 
+  /// A quick switch to start or quit the app, plus whether it is listed in the Apps tab.
+  /// Apps that aren't installed can't be switched, so their controls are disabled.
   private func appRow(_ app: ManagedApp) -> some View {
     let installed = model.installed.contains(app.id)
+    let on = model.running.contains(app.id)
     return HStack(spacing: 10) {
       Toggle(
-        isOn: Binding(get: { !model.hidden.contains(app.id) }, set: { model.setShown(app, $0) })
+        isOn: Binding(get: { on }, set: { model.set(app, on: $0) })
       ) {
         HStack(spacing: 10) {
           Image(nsImage: model.icon(app, size: 22))
@@ -188,14 +191,22 @@ struct AppsSettingsView: View {
             .frame(width: 22, height: 22)
             .opacity(installed ? 1 : 0.4)
           VStack(alignment: .leading, spacing: 1) {
-            Text("Show \(app.name)")
-            if !installed {
-              Text("Not installed, so it's hidden from the menu")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+            Text(app.name)
+            Text(installed ? (on ? "Running" : "Stopped") : "Not installed")
+              .font(.caption)
+              .foregroundStyle(.secondary)
           }
         }
+      }
+      .toggleStyle(.switch)
+      .disabled(!installed || model.busy.contains(app.id))
+      if installed {
+        Toggle(
+          "Show in Quick Toggle",
+          isOn: Binding(get: { !model.hidden.contains(app.id) }, set: { model.setShown(app, $0) })
+        )
+        .toggleStyle(.checkbox)
+        .controlSize(.small)
       }
       if installed && app.background {
         Toggle(
@@ -210,7 +221,7 @@ struct AppsSettingsView: View {
           "When on, \(app.name) runs in the background and its window is hidden whenever it pops up. Needs Accessibility access for Kitbag."
         )
       }
-      if installed {
+      if installed && app.category != .utilities {
         Button("Menu bar icon…") { AppMenuIcon.openSystemSettings() }
           .controlSize(.small)
           .help("Manage \(app.name)'s menu bar icon in System Settings")

@@ -9,9 +9,7 @@ struct SpeedTestView: View {
   var body: some View {
     VStack(spacing: 10) {
       // Phase stepper while running or done
-      if model.phase != .idle {
-        PhaseStepper(phase: model.phase)
-      }
+      PhaseStepper(phase: model.phase)  // always shown, so nothing jumps when a test starts
 
       HStack(spacing: 8) {
         SpeedTile(
@@ -69,20 +67,19 @@ struct SpeedTestView: View {
         .tint(model.isRunning ? KitbagUI.danger : Color.accentColor)
         .controlSize(.large)
 
-        if model.phase == .done {
-          Button {
-            copySummary()
-          } label: {
-            Image(systemName: copied.value ? "checkmark" : "doc.on.doc")
-              .font(.system(size: 13, weight: .semibold))
-              .foregroundStyle(copied.value ? KitbagUI.success : .primary)
-              .frame(width: 28)
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.large)
-          .help("Copy results")
-          .accessibilityLabel("Copy speed test results")
+        Button {
+          copySummary()
+        } label: {
+          Image(systemName: copied.value ? "checkmark" : "doc.on.doc")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(copied.value ? KitbagUI.success : .primary)
+            .frame(width: 28)
         }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(model.phase != .done)
+        .help("Copy results")
+        .accessibilityLabel("Copy speed test results")
       }
 
       HStack(spacing: 5) {
@@ -92,9 +89,11 @@ struct SpeedTestView: View {
         }
         Text(status)
           .lineLimit(1)
+          .minimumScaleFactor(0.8)
           .foregroundStyle(model.phase == .failed ? KitbagUI.danger : .secondary)
       }
       .font(.caption)
+      .frame(maxWidth: .infinity, minHeight: 16)
     }
   }
 
@@ -165,6 +164,8 @@ private struct PhaseStepper: View {
       Text(title)
         .font(.caption2.weight(s == 1 ? .semibold : .medium))
         .foregroundStyle(s == 0 ? .secondary : .primary)
+        .lineLimit(1)
+        .fixedSize()
     }
   }
 

@@ -101,7 +101,13 @@ public final class ToolManager: ObservableObject {
   public func setEnabled(_ id: String, _ on: Bool) {
     guard let d = descriptors.first(where: { $0.id == id }) else { return }
     defaults.set(on, forKey: key(id))
-    if on && isAvailable(d) { activate(d) } else { deactivate(id) }
+    let wasActive = active[id] != nil
+    if on && isAvailable(d) {
+      activate(d)
+      if !wasActive { active[id]?.switchedOnByUser() }
+    } else {
+      deactivate(id)
+    }
   }
 
   public var enabledTools: [(descriptor: ToolDescriptor, tool: any KitbagTool)] {

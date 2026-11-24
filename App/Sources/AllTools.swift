@@ -2,11 +2,13 @@ import Apps
 import Authenticator
 import Audio
 import Blip
+import Calculator
 import Clipboard
 import DevTools
 import Dictation
 import FileShelf
 import KitbagCore
+import Mirror
 import SpeedTest
 import SystemMonitor
 import VideoPlayer
@@ -20,9 +22,13 @@ enum AllTools {
     VideoPlayerTool.descriptor,
     SystemMonitorTool.descriptor,
     SpeedTestTool.descriptor,
+    CalculatorTool.descriptor,
+    MirrorTool.descriptor,
     DevToolsTool.descriptor,
+    PortManagerTool.descriptor,
     BlipTool.descriptor,
     AudioTool.descriptor,
+    AppLauncherTool.descriptor,
     AppsTool.descriptor,
     DictationTool.descriptor,
   ]

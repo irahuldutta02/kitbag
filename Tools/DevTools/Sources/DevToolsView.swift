@@ -17,6 +17,9 @@ struct DevToolsView: View {
         toolTile(
           "Measure", subtitle: "Screen ruler", symbol: "ruler", tint: .orange,
           action: model.measure)
+        toolTile(
+          "Ports", subtitle: "Port manager", symbol: "network", tint: .teal,
+          action: { NotificationCenter.default.post(name: .kitbagOpenPopup, object: "portmanager") })
       }
       if services.dockerReady { ServicesCard(model: services, copy: model.copy) }
       VersionsCard(model: versions)
@@ -32,17 +35,16 @@ struct DevToolsView: View {
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      HStack(spacing: 10) {
+      VStack(spacing: 6) {
         Image(systemName: symbol)
           .font(.system(size: 15, weight: .semibold))
           .foregroundStyle(.white)
           .frame(width: 34, height: 34)
           .background(tint.gradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        VStack(alignment: .leading, spacing: 1) {
-          Text(title).font(.callout.weight(.semibold))
-          Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+        VStack(spacing: 1) {
+          Text(title).font(.callout.weight(.semibold)).lineLimit(1)
+          Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
-        Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity)
       .card(padding: 10)
