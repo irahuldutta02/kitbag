@@ -29,6 +29,16 @@ import Testing
     #expect(!DevToolsTool().acceptsFileDrops)
   }
 
+  @Test func everyServiceHasALogoAndItsDataVolume() {
+    #expect(ServicesModel.services.map(\.id) == ["mongo", "postgres", "valkey"])
+    for s in ServicesModel.services {
+      #expect(ServiceLogo.image(for: s.id, size: 20) != nil)
+      // Uninstall removes this volume by name, so it has to match the compose file.
+      #expect(s.compose.contains("- \(s.volume):/"))
+      #expect(s.compose.contains("container_name: \(s.container)"))
+    }
+  }
+
   @Test func versionParsing() {
     #expect(VersionsModel.sorted(["v20.9.0", "v18.20.1", "v20.11.0"]) == ["v18.20.1", "v20.9.0", "v20.11.0"])
     #expect(VersionsModel.parseNodeDefault("v20.11.0\n") == "v20.11.0")

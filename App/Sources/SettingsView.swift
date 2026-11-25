@@ -112,7 +112,7 @@ struct SettingsView: View {
           ForEach(systemTools) { d in
             toolRow(d)
           }
-          row(id: "providers", title: Text("Providers"), tint: .indigo, enabledDot: nil) {
+          row(id: "providers", title: Text("AI Agent Providers"), tint: .indigo, enabledDot: nil) {
             Image(systemName: "cpu")
               .font(.system(size: 11.5, weight: .semibold))
           }

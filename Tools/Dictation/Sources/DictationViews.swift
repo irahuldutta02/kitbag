@@ -471,7 +471,7 @@ struct DictationSettingsView: View {
           if !st.authenticated { Button("Sign in") { providers.signIn(id) }.controlSize(.small) }
           Button("Update") { providers.update(id) }.controlSize(.small)
         }
-        Button("Manage Providers…") {
+        Button("Manage AI Agent Providers…") {
           NotificationCenter.default.post(name: .kitbagOpenSettings, object: "providers")
         }
         .controlSize(.small)

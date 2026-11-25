@@ -2,7 +2,7 @@ import AppKit
 import KitbagCore
 import SwiftUI
 
-/// Docker Desktop plus MongoDB and PostgreSQL, each run from a docker compose file.
+/// Docker Desktop plus MongoDB, PostgreSQL and Valkey, each run from a docker compose file.
 @MainActor
 final class ServicesModel: ObservableObject {
   struct Service: Identifiable {
@@ -14,6 +14,7 @@ final class ServicesModel: ObservableObject {
     let tint: Color
     let endpoint: String  // shown while running
     let connection: String  // what "copy" puts on the clipboard
+    let volume: String  // data volume name inside the compose file
     let compose: String  // docker-compose.yml contents
   }
 
@@ -23,6 +24,7 @@ final class ServicesModel: ObservableObject {
       id: "mongo", title: "MongoDB", container: "mongo-db",
       subtitle: "mongo:7 · localhost:27017", symbol: "leaf.fill", tint: .green,
       endpoint: "localhost:27017", connection: "mongodb://admin:admin@localhost:27017",
+      volume: "mongo_data",
       compose: """
         services:
           mongodb:
@@ -45,6 +47,7 @@ final class ServicesModel: ObservableObject {
       id: "postgres", title: "PostgreSQL", container: "postgres-db",
       subtitle: "postgres:16 · localhost:5432", symbol: "cylinder.split.1x2.fill", tint: .indigo,
       endpoint: "localhost:5432", connection: "postgresql://admin:admin@localhost:5432/postgres",
+      volume: "postgres_data",
       compose: """
         services:
           postgres:
@@ -61,6 +64,29 @@ final class ServicesModel: ObservableObject {
 
         volumes:
           postgres_data:
+
+        """),
+    // The admin user matches the other databases; requirepass covers clients that only send a password.
+    Service(
+      id: "valkey", title: "Valkey", container: "valkey-db",
+      subtitle: "valkey:9 · localhost:6379", symbol: "key.fill", tint: .blue,
+      endpoint: "localhost:6379", connection: "redis://admin:admin@localhost:6379",
+      volume: "valkey_data",
+      compose: """
+        services:
+          valkey:
+            image: valkey/valkey:9
+            container_name: valkey-db
+            restart: unless-stopped
+            command: ["valkey-server", "--appendonly", "yes", "--requirepass", "admin",
+              "--user", "admin", "on", ">admin", "~*", "&*", "+@all"]
+            ports:
+              - "6379:6379"
+            volumes:
+              - valkey_data:/data
+
+        volumes:
+          valkey_data:
 
         """),
   ]
@@ -99,7 +125,7 @@ final class ServicesModel: ObservableObject {
 
   enum Phase { case installing, uninstalling, starting, stopping }
 
-  /// What is happening to `id` ("docker", "mongo", "postgres") right now, if anything.
+  /// What is happening to `id` ("docker", "mongo", "postgres", "valkey") right now, if anything.
   func phase(_ id: String) -> Phase? {
     if busy.contains("install-\(id)") { return .installing }
     if busy.contains("uninstall-\(id)") { return .uninstalling }
@@ -212,9 +238,16 @@ final class ServicesModel: ObservableObject {
   // MARK: Actions
 
   /// Opens the Docker Desktop window (the normal app), so Docker's own menu bar icon isn't needed.
+  /// A running Docker is a menu bar agent that ignores a plain relaunch, so ask for its dashboard.
   func openDocker() {
-    guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.dockerBundleID) else { return }
-    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
+    guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.dockerBundleID),
+      let dashboard = URL(string: "docker-desktop://dashboard/open")
+    else { return }
+    NSWorkspace.shared.open([dashboard], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) {
+      [weak self] _, error in
+      guard let message = error?.localizedDescription else { return }
+      Task { @MainActor in self?.notice = message }
+    }
   }
 
   func toggleDocker(_ on: Bool) {
@@ -278,7 +311,7 @@ final class ServicesModel: ObservableObject {
       await self.docker(["rm", "-f", s.container])
       if deleteData {
         // compose names the volume <project>_<volume>
-        await self.docker(["volume", "rm", "kitbag-\(s.id)_\(s.id == "mongo" ? "mongo_data" : "postgres_data")"])
+        await self.docker(["volume", "rm", "kitbag-\(s.id)_\(s.volume)"])
       }
     }
   }
@@ -286,7 +319,7 @@ final class ServicesModel: ObservableObject {
   func uninstallDocker() {
     guard Shell.confirm(
       String(localized: "Uninstall Docker Desktop?"),
-      String(localized: "Docker Desktop is removed. Containers, images and volumes inside it, including MongoDB and PostgreSQL data, may be lost."),
+      String(localized: "Docker Desktop is removed. Containers, images and volumes inside it, including MongoDB, PostgreSQL and Valkey data, may be lost."),
       action: String(localized: "Uninstall"))
     else { return }
     run("uninstall-docker") {

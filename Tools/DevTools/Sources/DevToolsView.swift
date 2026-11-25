@@ -276,7 +276,7 @@ struct BlockSection<Content: View>: View {
   }
 }
 
-/// Settings for the Dev Tools tab: one block each for Node.js, Python, Docker, MongoDB, PostgreSQL.
+/// Settings for the Dev Tools tab: one block each for Node.js, Python, Docker, MongoDB, PostgreSQL, Valkey.
 struct DevToolsSettingsView: View {
   @ObservedObject var model: ServicesModel
   @ObservedObject var versions: VersionsModel

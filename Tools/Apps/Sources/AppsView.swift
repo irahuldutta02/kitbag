@@ -150,7 +150,7 @@ struct AppsSettingsView: View {
   var body: some View {
     Section {
       ShortcutRecorderRow(
-        "Open Apps",
+        "Open Quick Toggle",
         current: model.shortcut,
         defaultShortcut: AppsModel.defaultShortcut,
         onPause: { model.pauseHotKey($0) },
@@ -176,56 +176,66 @@ struct AppsSettingsView: View {
     }
   }
 
-  /// A quick switch to start or quit the app, plus whether it is listed in the Apps tab.
-  /// Apps that aren't installed can't be switched, so their controls are disabled.
+  /// The app and its switch on top, its options underneath, so every row lines up the same way.
+  /// Apps that aren't installed are only listed, with no switch or options.
   private func appRow(_ app: ManagedApp) -> some View {
     let installed = model.installed.contains(app.id)
     let on = model.running.contains(app.id)
-    return HStack(spacing: 10) {
-      Toggle(
-        isOn: Binding(get: { on }, set: { model.set(app, on: $0) })
-      ) {
-        HStack(spacing: 10) {
-          Image(nsImage: model.icon(app, size: 22))
-            .resizable()
-            .frame(width: 22, height: 22)
-            .opacity(installed ? 1 : 0.4)
-          VStack(alignment: .leading, spacing: 1) {
-            Text(app.name)
-            Text(installed ? (on ? "Running" : "Stopped") : "Not installed")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
+    let iconSize: CGFloat = 28
+    let spacing: CGFloat = 10
+    return VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: spacing) {
+        Image(nsImage: model.icon(app, size: iconSize))
+          .resizable()
+          .frame(width: iconSize, height: iconSize)
+          .opacity(installed ? 1 : 0.4)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(app.name)
+          Text(installed ? (on ? "Running" : "Stopped") : "Not installed")
+            .font(.caption)
+            .foregroundStyle(on ? KitbagUI.success : .secondary)
+        }
+        Spacer()
+        if model.busy.contains(app.id) { ProgressView().controlSize(.small) }
+        if installed {
+          Toggle(app.name, isOn: Binding(get: { on }, set: { model.set(app, on: $0) }))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(model.busy.contains(app.id))
         }
       }
-      .toggleStyle(.switch)
-      .disabled(!installed || model.busy.contains(app.id))
       if installed {
-        Toggle(
-          "Show in Quick Toggle",
-          isOn: Binding(get: { !model.hidden.contains(app.id) }, set: { model.setShown(app, $0) })
-        )
-        .toggleStyle(.checkbox)
-        .controlSize(.small)
+        appOptions(app).padding(.leading, iconSize + spacing)
       }
-      if installed && app.background {
+    }
+    .padding(.vertical, 2)
+  }
+
+  private func appOptions(_ app: ManagedApp) -> some View {
+    HStack(spacing: 16) {
+      Toggle(
+        "Show in Quick Toggle",
+        isOn: Binding(get: { !model.hidden.contains(app.id) }, set: { model.setShown(app, $0) })
+      )
+      if app.background {
         Toggle(
           "Keep window hidden",
           isOn: Binding(
             get: { !model.windowAllowed.contains(app.id) },
             set: { model.setWindowAllowed(app, !$0) })
         )
-        .toggleStyle(.checkbox)
-        .controlSize(.small)
         .help(
           "When on, \(app.name) runs in the background and its window is hidden whenever it pops up. Needs Accessibility access for Kitbag."
         )
       }
-      if installed && app.category != .utilities {
+      Spacer(minLength: 0)
+      if app.category != .utilities {
         Button("Menu bar icon…") { AppMenuIcon.openSystemSettings() }
-          .controlSize(.small)
           .help("Manage \(app.name)'s menu bar icon in System Settings")
       }
     }
+    .toggleStyle(.checkbox)
+    .controlSize(.small)
   }
 }

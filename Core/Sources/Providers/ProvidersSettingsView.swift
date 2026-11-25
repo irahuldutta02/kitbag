@@ -33,7 +33,7 @@ public struct ProvidersSettingsView: View {
   private var header: some View {
     HStack(spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
-        Text("Providers").font(.title3.weight(.semibold))
+        Text("AI Agent Providers").font(.title3.weight(.semibold))
         Text("AI command line tools Kitbag can use, for example to clean up dictation.")
           .font(.callout).foregroundStyle(.secondary)
       }
