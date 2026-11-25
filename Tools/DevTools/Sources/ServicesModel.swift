@@ -362,9 +362,9 @@ final class ServicesModel: ObservableObject {
     }
   }
 
-  /// Opens Docker Desktop in the background and waits for its engine. False if it never came up.
-  /// Starts the Docker engine in the background. `docker desktop start` brings it up without the
-  /// dashboard; we also keep hiding the app's windows while it starts.
+  /// Launches Docker Desktop, if needed, and waits for its engine. False if it never came up.
+  /// It is opened like any other app, just without taking focus: Kitbag never hides its windows,
+  /// so Docker's dashboard and menu bar icon behave the way Docker's own settings say.
   private func startDocker() async -> Bool {
     await refresh()
     if daemonReady { return true }
@@ -372,24 +372,18 @@ final class ServicesModel: ObservableObject {
       notice = String(localized: "Docker isn't installed. Install it in Settings.")
       return false
     }
-    if !dockerRunning, !(await docker(["desktop", "start", "--detach"], report: false)) {
+    if !dockerRunning {
       let c = NSWorkspace.OpenConfiguration()
       c.activates = false
-      c.hides = true
       _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: c)
     }
     for _ in 0..<60 {
-      hideDocker()
       try? await Task.sleep(nanoseconds: 2_000_000_000)
       await refresh()
-      if daemonReady { hideDocker(); return true }
+      if daemonReady { return true }
     }
     notice = String(localized: "Docker didn't start in time.")
     return false
-  }
-
-  private func hideDocker() {
-    Self.dockerAppIDs.forEach { NSRunningApplication.runningApplications(withBundleIdentifier: $0).forEach { $0.hide() } }
   }
 
   /// Writes the service's compose file into Application Support and runs `docker compose` on it.
