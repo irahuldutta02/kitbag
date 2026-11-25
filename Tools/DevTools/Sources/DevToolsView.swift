@@ -156,6 +156,21 @@ struct ServicesCard: View {
       title: s.title, symbol: s.symbol, tint: s.tint, id: s.id,
       subtitle: st, active: model.containers[s.container] == true && model.phase(s.id) == nil
     ) {
+      if running, let web = s.web, let page = URL(string: web) {
+        Button {
+          NSWorkspace.shared.open(page)
+        } label: {
+          Image(systemName: "safari")
+            .font(.system(size: 12.5))
+            .foregroundStyle(.secondary)
+            .frame(width: 24, height: 24)
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .hoverHighlight(cornerRadius: 6)
+        .help("Open web UI")
+        .accessibilityLabel("Open \(s.title) web UI")
+      }
       if running {
         Button {
           copy(s.connection)
@@ -331,7 +346,17 @@ struct DevToolsSettingsView: View {
           installLabel: model.daemonReady ? "Install" : "Set up",
           install: { model.install(s) }, uninstall: { model.uninstall(s) })
       },
-      content: { EmptyView() })
+      content: {
+        if let note = s.note, model.isInstalled(s) {
+          BlockSection {
+            Text(note).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            if let web = s.web, let page = URL(string: web), model.containers[s.container] == true {
+              Button("Open Web UI") { NSWorkspace.shared.open(page) }.controlSize(.small)
+            }
+          }
+        }
+      })
   }
 
   @ViewBuilder private func actions(

@@ -16,6 +16,12 @@ final class ServicesModel: ObservableObject {
     let connection: String  // what "copy" puts on the clipboard
     let volume: String  // data volume name inside the compose file
     let compose: String  // docker-compose.yml contents
+    var companions: [String] = []  // other containers in the compose file, run along with it
+    var web: String? = nil  // address of its web UI
+    var note: String? = nil  // shown in Settings once installed
+
+    /// Every container the service runs, companions first so they are stopped first.
+    var allContainers: [String] { companions + [container] }
   }
 
   // Dev-only default credentials (admin/admin); ports are published to localhost.
@@ -69,7 +75,7 @@ final class ServicesModel: ObservableObject {
     // The admin user matches the other databases; requirepass covers clients that only send a password.
     Service(
       id: "valkey", title: "Valkey", container: "valkey-db",
-      subtitle: "valkey:9 · localhost:6379", symbol: "key.fill", tint: .blue,
+      subtitle: "valkey:9 · localhost:6379 · UI on 8085", symbol: "key.fill", tint: .blue,
       endpoint: "localhost:6379", connection: "redis://admin:admin@localhost:6379",
       volume: "valkey_data",
       compose: """
@@ -82,13 +88,36 @@ final class ServicesModel: ObservableObject {
               "--user", "admin", "on", ">admin", "~*", "&*", "+@all"]
             ports:
               - "6379:6379"
+              # The web UI below, which has no login of its own: only reachable from this Mac.
+              - "127.0.0.1:8085:8080"
             volumes:
               - valkey_data:/data
+
+          valkey-admin:
+            image: valkey/valkey-admin:1.3.0
+            container_name: valkey-admin
+            restart: unless-stopped
+            # Shares Valkey's network, so "localhost" in the UI means this Valkey.
+            network_mode: "service:valkey"
+            depends_on:
+              - valkey
+            environment:
+              DEPLOYMENT_MODE: Web
+            # If Valkey stops or restarts, the shared network goes stale: exit, so Docker restarts
+            # the UI onto the new one (or leaves it stopped while Valkey is).
+            healthcheck:
+              test: ["CMD", "node", "-e", "require('net').connect(6379).on('connect', () => process.exit(0)).on('error', () => process.kill(1))"]
+              interval: 10s
 
         volumes:
           valkey_data:
 
-        """),
+        """,
+      companions: ["valkey-admin"], web: "http://localhost:8085",
+      note: String(
+        localized:
+          "In the web UI, add a connection with host localhost, port 6379, username admin, password admin, and Use TLS turned off."
+      )),
   ]
 
   nonisolated static let dockerBundleID = "com.docker.docker"
@@ -267,7 +296,15 @@ final class ServicesModel: ObservableObject {
     run(s.id, desired: on) {
       guard await self.startDocker() else { return }
       if !on {
-        await self.docker(["stop", s.container])
+        await self.docker(["stop"] + s.allContainers.filter { self.containers[$0] != nil })
+      } else if !s.companions.isEmpty {
+        // `up` starts them in order and adds any that an older install doesn't have yet. If it
+        // can't (say a leftover container has the same name), recreate them; the data volume stays.
+        if !(await self.compose(s, ["up", "-d"], report: false)) {
+          self.echo("Start failed; recreating \(s.title)…\n")
+          await self.docker(["rm", "-f"] + s.allContainers, report: false)
+          await self.compose(s, ["up", "-d"])
+        }
       } else if self.containers[s.container] != nil {
         // A container whose storage is broken ("RWLayer ... nil") can't start: remove and recreate it.
         if !(await self.docker(["start", s.container], report: false)) {
@@ -308,7 +345,7 @@ final class ServicesModel: ObservableObject {
     let deleteData = choice == .alertSecondButtonReturn
     run("uninstall-\(s.id)") {
       guard await self.startDocker() else { return }
-      await self.docker(["rm", "-f", s.container])
+      await self.docker(["rm", "-f"] + s.allContainers.filter { self.containers[$0] != nil })
       if deleteData {
         // compose names the volume <project>_<volume>
         await self.docker(["volume", "rm", "kitbag-\(s.id)_\(s.volume)"])
@@ -388,7 +425,7 @@ final class ServicesModel: ObservableObject {
 
   /// Writes the service's compose file into Application Support and runs `docker compose` on it.
   @discardableResult
-  private func compose(_ s: Service, _ args: [String]) async -> Bool {
+  private func compose(_ s: Service, _ args: [String], report: Bool = true) async -> Bool {
     let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("Kitbag/docker/\(s.id)", isDirectory: true)
     let file = dir.appendingPathComponent("docker-compose.yml")
@@ -399,7 +436,7 @@ final class ServicesModel: ObservableObject {
       notice = error.localizedDescription
       return false
     }
-    return await docker(["compose", "-p", "kitbag-\(s.id)", "-f", file.path] + args)
+    return await docker(["compose", "-p", "kitbag-\(s.id)", "-f", file.path] + args, report: report)
   }
 
   @discardableResult

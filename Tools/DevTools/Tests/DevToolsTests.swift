@@ -39,6 +39,14 @@ import Testing
     }
   }
 
+  @Test func valkeyRunsItsWebUIAlongside() {
+    let valkey = ServicesModel.services.first { $0.id == "valkey" }!
+    #expect(valkey.allContainers == ["valkey-admin", "valkey-db"])
+    for name in valkey.allContainers { #expect(valkey.compose.contains("container_name: \(name)")) }
+    #expect(valkey.compose.contains("\"127.0.0.1:8085:8080\""))
+    #expect(valkey.web == "http://localhost:8085")
+  }
+
   @Test func versionParsing() {
     #expect(VersionsModel.sorted(["v20.9.0", "v18.20.1", "v20.11.0"]) == ["v18.20.1", "v20.9.0", "v20.11.0"])
     #expect(VersionsModel.parseNodeDefault("v20.11.0\n") == "v20.11.0")

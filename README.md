@@ -75,7 +75,7 @@ Speak in any app and get clean, ready-to-send text pasted where you are typing.
 ### ![](assets/icons/devtools.svg) Dev Tools
 
 - **Color picker** and an on-screen **ruler** for measuring anything on your display.
-- One-click switches for **Docker**, **MongoDB**, **PostgreSQL** and **Valkey**.
+- One-click switches for **Docker**, **MongoDB**, **PostgreSQL** and **Valkey** (with its web UI).
 - Switch **Node.js** (nvm) and **Python** (pyenv) versions.
 
 
